@@ -1,0 +1,290 @@
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
+import { formatCurrency, formatDate } from "@/lib/format";
+import { Plus, Check, Trash2, TrendingUp } from "lucide-react";
+
+type Comissao = {
+  id: string;
+  contrato_id: string;
+  parcela: number;
+  tipo: "Bancaria" | "Vida" | "Adesao";
+  mes_previsto: string;
+  data_pagamento: string | null;
+  valor: number;
+  pago: boolean;
+  contrato?: { cliente: string; valor_mensal: number; proporcao_comissao: number } | null;
+};
+type Contrato = { id: string; cliente: string; valor_mensal: number; proporcao_comissao: number };
+
+export default function Comissoes() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [rows, setRows] = useState<Comissao[]>([]);
+  const [contratos, setContratos] = useState<Contrato[]>([]);
+  const [open, setOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [form, setForm] = useState<Partial<Comissao>>({ parcela: 1, tipo: "Bancaria", valor: 0, pago: false });
+
+  const load = async () => {
+    const [c, k] = await Promise.all([
+      supabase
+        .from("comissoes")
+        .select("*, contrato:contratos(cliente,valor_mensal,proporcao_comissao)")
+        .order("mes_previsto", { ascending: false }),
+      supabase.from("contratos").select("id,cliente,valor_mensal,proporcao_comissao").order("cliente"),
+    ]);
+    setRows((c.data as any) ?? []);
+    setContratos((k.data as any) ?? []);
+  };
+
+  useEffect(() => {
+    document.title = "Comissões — Corretor SaaS";
+    load();
+  }, []);
+
+  const filtered = useMemo(() => {
+    return rows.filter((r) => {
+      if (statusFilter === "pago") return r.pago;
+      if (statusFilter === "aberto") return !r.pago;
+      return true;
+    });
+  }, [rows, statusFilter]);
+
+  const togglePago = async (r: Comissao) => {
+    const novo = !r.pago;
+    const { error } = await supabase
+      .from("comissoes")
+      .update({ pago: novo, data_pagamento: novo ? new Date().toISOString().slice(0, 10) : null })
+      .eq("id", r.id);
+    if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
+    load();
+  };
+
+  const remove = async (id: string) => {
+    if (!confirm("Excluir parcela?")) return;
+    await supabase.from("comissoes").delete().eq("id", id);
+    load();
+  };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !form.contrato_id || !form.mes_previsto) return;
+    const { error } = await supabase.from("comissoes").insert({
+      user_id: user.id,
+      contrato_id: form.contrato_id,
+      parcela: form.parcela ?? 1,
+      tipo: (form.tipo as any) ?? "Bancaria",
+      mes_previsto: form.mes_previsto,
+      valor: Number(form.valor ?? 0),
+      pago: false,
+    });
+    if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
+    toast({ title: "Parcela criada" });
+    setOpen(false);
+    setForm({ parcela: 1, tipo: "Bancaria", valor: 0, pago: false });
+    load();
+  };
+
+  // Previsto vs recebido por contrato
+  const consolidado = useMemo(() => {
+    const map = new Map<string, { contrato_id: string; cliente: string; previsto: number; recebido: number }>();
+    contratos.forEach((c) => {
+      map.set(c.id, {
+        contrato_id: c.id,
+        cliente: c.cliente,
+        previsto: Number(c.valor_mensal) * Number(c.proporcao_comissao),
+        recebido: 0,
+      });
+    });
+    rows.forEach((r) => {
+      const it = map.get(r.contrato_id);
+      if (it && r.pago) it.recebido += Number(r.valor);
+    });
+    return Array.from(map.values()).filter((v) => v.previsto > 0 || v.recebido > 0);
+  }, [rows, contratos]);
+
+  return (
+    <div>
+      <PageHeader
+        title="Comissões"
+        description="Parcelas a receber e comparativo previsto × recebido"
+        actions={
+          <Button onClick={() => setOpen(true)}>
+            <Plus className="h-4 w-4" /> Nova parcela
+          </Button>
+        }
+      />
+
+      <Tabs defaultValue="parcelas">
+        <TabsList>
+          <TabsTrigger value="parcelas">Parcelas</TabsTrigger>
+          <TabsTrigger value="consolidado">Previsto × Recebido</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="parcelas">
+          <Card className="mb-4">
+            <CardContent className="p-3">
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  <SelectItem value="aberto">Em aberto</SelectItem>
+                  <SelectItem value="pago">Pagas</SelectItem>
+                </SelectContent>
+              </Select>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Contrato</TableHead>
+                    <TableHead>Parcela</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead>Mês previsto</TableHead>
+                    <TableHead>Pagamento</TableHead>
+                    <TableHead className="text-right">Valor</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-[120px]"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.length === 0 && (
+                    <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-10">Nenhuma parcela.</TableCell></TableRow>
+                  )}
+                  {filtered.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="font-medium">{r.contrato?.cliente ?? "—"}</TableCell>
+                      <TableCell>{r.parcela}</TableCell>
+                      <TableCell>{r.tipo}</TableCell>
+                      <TableCell>{formatDate(r.mes_previsto)}</TableCell>
+                      <TableCell>{formatDate(r.data_pagamento)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(r.valor)}</TableCell>
+                      <TableCell>
+                        {r.pago ? (
+                          <Badge className="bg-success text-success-foreground hover:bg-success">Pago</Badge>
+                        ) : (
+                          <Badge variant="secondary">Aberto</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1 justify-end">
+                          <Button size="icon" variant="ghost" onClick={() => togglePago(r)} title={r.pago ? "Marcar como aberto" : "Marcar como pago"}>
+                            <Check className={`h-4 w-4 ${r.pago ? "text-muted-foreground" : "text-success"}`} />
+                          </Button>
+                          <Button size="icon" variant="ghost" onClick={() => remove(r.id)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="consolidado">
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Contrato</TableHead>
+                    <TableHead className="text-right">Previsto</TableHead>
+                    <TableHead className="text-right">Recebido</TableHead>
+                    <TableHead className="text-right">% Atingido</TableHead>
+                    <TableHead></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {consolidado.map((c) => {
+                    const pct = c.previsto > 0 ? (c.recebido / c.previsto) * 100 : 0;
+                    return (
+                      <TableRow key={c.contrato_id}>
+                        <TableCell className="font-medium">{c.cliente}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatCurrency(c.previsto)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatCurrency(c.recebido)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{pct.toFixed(0)}%</TableCell>
+                        <TableCell>
+                          {pct >= 100 ? (
+                            <Badge className="bg-success text-success-foreground hover:bg-success"><TrendingUp className="h-3 w-3 mr-1" />OK</Badge>
+                          ) : pct >= 50 ? (
+                            <Badge className="bg-warning text-warning-foreground hover:bg-warning">Parcial</Badge>
+                          ) : (
+                            <Badge variant="destructive">Atrasado</Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Nova parcela de comissão</DialogTitle></DialogHeader>
+          <form onSubmit={submit} className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Contrato</Label>
+              <Select value={form.contrato_id ?? ""} onValueChange={(v) => setForm((p) => ({ ...p, contrato_id: v }))}>
+                <SelectTrigger><SelectValue placeholder="Selecione um contrato" /></SelectTrigger>
+                <SelectContent>
+                  {contratos.map((c) => (<SelectItem key={c.id} value={c.id}>{c.cliente}</SelectItem>))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Parcela</Label>
+                <Input type="number" min={1} value={form.parcela ?? 1} onChange={(e) => setForm((p) => ({ ...p, parcela: Number(e.target.value) }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Tipo</Label>
+                <Select value={form.tipo as string} onValueChange={(v) => setForm((p) => ({ ...p, tipo: v as any }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Bancaria">Bancária</SelectItem>
+                    <SelectItem value="Vida">Vida</SelectItem>
+                    <SelectItem value="Adesao">Adesão</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Mês previsto</Label>
+                <Input type="date" value={form.mes_previsto ?? ""} onChange={(e) => setForm((p) => ({ ...p, mes_previsto: e.target.value }))} required />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Valor (R$)</Label>
+                <Input type="number" step="0.01" value={form.valor ?? 0} onChange={(e) => setForm((p) => ({ ...p, valor: Number(e.target.value) }))} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+              <Button type="submit">Salvar</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
