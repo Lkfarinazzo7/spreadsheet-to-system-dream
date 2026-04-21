@@ -14,7 +14,267 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      canais_venda: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          id: string
+          nome: string
+          user_id: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          nome: string
+          user_id: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          nome?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      categorias_plano: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          id: string
+          nome: string
+          user_id: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          nome: string
+          user_id: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          nome?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      comissoes: {
+        Row: {
+          contrato_id: string
+          created_at: string
+          data_pagamento: string | null
+          id: string
+          mes_previsto: string
+          observacoes: string | null
+          pago: boolean
+          parcela: number
+          tipo: Database["public"]["Enums"]["tipo_comissao"]
+          updated_at: string
+          user_id: string
+          valor: number
+        }
+        Insert: {
+          contrato_id: string
+          created_at?: string
+          data_pagamento?: string | null
+          id?: string
+          mes_previsto: string
+          observacoes?: string | null
+          pago?: boolean
+          parcela?: number
+          tipo?: Database["public"]["Enums"]["tipo_comissao"]
+          updated_at?: string
+          user_id: string
+          valor?: number
+        }
+        Update: {
+          contrato_id?: string
+          created_at?: string
+          data_pagamento?: string | null
+          id?: string
+          mes_previsto?: string
+          observacoes?: string | null
+          pago?: boolean
+          parcela?: number
+          tipo?: Database["public"]["Enums"]["tipo_comissao"]
+          updated_at?: string
+          user_id?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comissoes_contrato_id_fkey"
+            columns: ["contrato_id"]
+            isOneToOne: false
+            referencedRelation: "contratos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contratos: {
+        Row: {
+          canal_id: string | null
+          categoria_id: string | null
+          cliente: string
+          created_at: string
+          data_vigencia: string | null
+          id: string
+          numero_proposta: string | null
+          observacoes: string | null
+          operadora_id: string | null
+          proporcao_comissao: number
+          status: Database["public"]["Enums"]["status_contrato"]
+          tipo: Database["public"]["Enums"]["tipo_contrato"]
+          updated_at: string
+          user_id: string
+          valor_mensal: number
+        }
+        Insert: {
+          canal_id?: string | null
+          categoria_id?: string | null
+          cliente: string
+          created_at?: string
+          data_vigencia?: string | null
+          id?: string
+          numero_proposta?: string | null
+          observacoes?: string | null
+          operadora_id?: string | null
+          proporcao_comissao?: number
+          status?: Database["public"]["Enums"]["status_contrato"]
+          tipo?: Database["public"]["Enums"]["tipo_contrato"]
+          updated_at?: string
+          user_id: string
+          valor_mensal?: number
+        }
+        Update: {
+          canal_id?: string | null
+          categoria_id?: string | null
+          cliente?: string
+          created_at?: string
+          data_vigencia?: string | null
+          id?: string
+          numero_proposta?: string | null
+          observacoes?: string | null
+          operadora_id?: string | null
+          proporcao_comissao?: number
+          status?: Database["public"]["Enums"]["status_contrato"]
+          tipo?: Database["public"]["Enums"]["tipo_contrato"]
+          updated_at?: string
+          user_id?: string
+          valor_mensal?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contratos_canal_id_fkey"
+            columns: ["canal_id"]
+            isOneToOne: false
+            referencedRelation: "canais_venda"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contratos_categoria_id_fkey"
+            columns: ["categoria_id"]
+            isOneToOne: false
+            referencedRelation: "categorias_plano"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contratos_operadora_id_fkey"
+            columns: ["operadora_id"]
+            isOneToOne: false
+            referencedRelation: "operadoras"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      despesas: {
+        Row: {
+          categoria: string | null
+          created_at: string
+          data: string
+          descricao: string
+          id: string
+          observacoes: string | null
+          pago: boolean
+          updated_at: string
+          user_id: string
+          valor: number
+        }
+        Insert: {
+          categoria?: string | null
+          created_at?: string
+          data?: string
+          descricao: string
+          id?: string
+          observacoes?: string | null
+          pago?: boolean
+          updated_at?: string
+          user_id: string
+          valor?: number
+        }
+        Update: {
+          categoria?: string | null
+          created_at?: string
+          data?: string
+          descricao?: string
+          id?: string
+          observacoes?: string | null
+          pago?: boolean
+          updated_at?: string
+          user_id?: string
+          valor?: number
+        }
+        Relationships: []
+      }
+      operadoras: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          id: string
+          nome: string
+          user_id: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          nome: string
+          user_id: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          nome?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string | null
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +283,9 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      status_contrato: "Ativo" | "Cancelado" | "Pendente"
+      tipo_comissao: "Bancaria" | "Vida" | "Adesao"
+      tipo_contrato: "PJ" | "PF" | "Adesao"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +412,10 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      status_contrato: ["Ativo", "Cancelado", "Pendente"],
+      tipo_comissao: ["Bancaria", "Vida", "Adesao"],
+      tipo_contrato: ["PJ", "PF", "Adesao"],
+    },
   },
 } as const
