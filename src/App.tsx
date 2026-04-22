@@ -10,6 +10,7 @@ import NotFound from "./pages/NotFound";
 import AppLayout from "./components/layout/AppLayout";
 import Dashboard from "./pages/app/Dashboard";
 import Contratos from "./pages/app/Contratos";
+import Pipeline from "./pages/app/Pipeline";
 import Comissoes from "./pages/app/Comissoes";
 import Despesas from "./pages/app/Despesas";
 import Alertas from "./pages/app/Alertas";
@@ -32,6 +33,7 @@ const App = () => (
             <Route path="/app" element={<AppLayout />}>
               <Route index element={<Dashboard />} />
               <Route path="contratos" element={<Contratos />} />
+              <Route path="pipeline" element={<Pipeline />} />
               <Route path="comissoes" element={<Comissoes />} />
               <Route path="despesas" element={<Despesas />} />
               <Route path="alertas" element={<Alertas />} />
