@@ -1,0 +1,187 @@
+import { useEffect, useMemo, useState } from "react";
+import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
+import { PipelineColumn } from "@/components/pipeline/PipelineColumn";
+import { PipelineItem } from "@/components/pipeline/PipelineCard";
+import { PipelineForm, PipelineFormValues } from "@/components/pipeline/PipelineForm";
+import { ContratoForm, ContratoFormValues } from "@/components/contratos/ContratoForm";
+
+const ETAPAS = [
+  "Montagem de contrato",
+  "Enviado para assinatura",
+  "Preenchimento da declaração de saúde",
+  "Entrevista médica",
+  "Em análise",
+  "Pendências",
+  "Aguardando vigência",
+  "Implantado",
+] as const;
+
+function addOneYear(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y + 1, m - 1, d));
+  return dt.toISOString().slice(0, 10);
+}
+
+export default function Pipeline() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [items, setItems] = useState<PipelineItem[]>([]);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<PipelineFormValues | null>(null);
+
+  // Promote modal (open ContratoForm with prefilled data)
+  const [promoteOpen, setPromoteOpen] = useState(false);
+  const [promoting, setPromoting] = useState<PipelineItem | null>(null);
+  const [promoteInitial, setPromoteInitial] = useState<ContratoFormValues | null>(null);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  const load = async () => {
+    const { data } = await supabase
+      .from("pipeline_contratos")
+      .select("*, operadora:operadoras(nome), canal:canais_venda(nome)")
+      .neq("etapa", "Implantado")
+      .order("posicao");
+    setItems((data as any) ?? []);
+  };
+
+  useEffect(() => {
+    document.title = "Pipeline — Corretor SaaS";
+    load();
+  }, []);
+
+  const grouped = useMemo(() => {
+    const map: Record<string, PipelineItem[]> = {};
+    for (const e of ETAPAS) map[e] = [];
+    for (const it of items) {
+      if (map[it.etapa]) map[it.etapa].push(it);
+    }
+    return map;
+  }, [items]);
+
+  const handlePromote = (item: PipelineItem) => {
+    setPromoting(item);
+    setPromoteInitial({
+      cliente: item.cliente,
+      tipo: item.tipo as any,
+      operadora_id: (item as any).operadora_id ?? null,
+      canal_id: (item as any).canal_id ?? null,
+      valor_mensal: Number(item.valor_mensal) || 0,
+      proporcao_comissao: 0,
+      data_vigencia: item.data_vigencia ?? null,
+      data_reajuste: item.data_vigencia ? addOneYear(item.data_vigencia) : null,
+      numero_proposta: item.numero_proposta ?? null,
+      observacoes: item.observacoes ?? null,
+      status: "Ativo",
+    });
+    setPromoteOpen(true);
+  };
+
+  const onContratoSaved = async () => {
+    // After contrato is saved successfully, remove from pipeline
+    if (promoting) {
+      await supabase.from("pipeline_contratos").delete().eq("id", promoting.id);
+      setPromoting(null);
+      setPromoteInitial(null);
+      toast({ title: "Implantado!", description: "Cartão movido para Contratos." });
+      load();
+    }
+  };
+
+  const handleDragEnd = async (e: DragEndEvent) => {
+    const id = e.active.id as string;
+    const newEtapa = e.over?.id as string | undefined;
+    if (!newEtapa) return;
+
+    const item = items.find((i) => i.id === id);
+    if (!item || item.etapa === newEtapa) return;
+
+    if (newEtapa === "Implantado") {
+      handlePromote(item);
+      return;
+    }
+
+    setItems((p) => p.map((i) => (i.id === id ? { ...i, etapa: newEtapa } : i)));
+    const { error } = await supabase
+      .from("pipeline_contratos")
+      .update({ etapa: newEtapa as any })
+      .eq("id", id);
+    if (error) {
+      toast({ title: "Erro ao mover", description: error.message, variant: "destructive" });
+      load();
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Excluir esta proposta do pipeline?")) return;
+    await supabase.from("pipeline_contratos").delete().eq("id", id);
+    toast({ title: "Proposta excluída" });
+    load();
+  };
+
+  const handleEdit = (item: PipelineItem) => {
+    setEditing({
+      id: item.id,
+      cliente: item.cliente,
+      numero_proposta: item.numero_proposta ?? null,
+      tipo: item.tipo as any,
+      operadora_id: (item as any).operadora_id ?? null,
+      canal_id: (item as any).canal_id ?? null,
+      valor_mensal: Number(item.valor_mensal) || 0,
+      data_vigencia: item.data_vigencia ?? null,
+      etapa: item.etapa,
+      observacoes: item.observacoes ?? null,
+    });
+    setFormOpen(true);
+  };
+
+  return (
+    <div>
+      <PageHeader
+        title="Pipeline"
+        description="Propostas em andamento até a implantação"
+        actions={
+          <Button onClick={() => { setEditing(null); setFormOpen(true); }}>
+            <Plus className="h-4 w-4" /> Nova proposta
+          </Button>
+        }
+      />
+
+      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+        <div className="flex gap-3 overflow-x-auto pb-4">
+          {ETAPAS.map((etapa) => (
+            <PipelineColumn
+              key={etapa}
+              etapa={etapa}
+              items={grouped[etapa]}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+            />
+          ))}
+        </div>
+      </DndContext>
+
+      <PipelineForm open={formOpen} onOpenChange={setFormOpen} initial={editing} onSaved={load} />
+
+      <ContratoForm
+        open={promoteOpen}
+        onOpenChange={(v) => {
+          setPromoteOpen(v);
+          if (!v) {
+            // Cancelled — keep card in pipeline
+            setPromoting(null);
+            setPromoteInitial(null);
+          }
+        }}
+        initial={promoteInitial}
+        onSaved={onContratoSaved}
+      />
+    </div>
+  );
+}
