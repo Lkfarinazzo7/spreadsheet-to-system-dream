@@ -1,4 +1,4 @@
-import { LayoutDashboard, FileText, Wallet, Receipt, Bell, BarChart3, Upload, Settings, LogOut } from "lucide-react";
+import { LayoutDashboard, FileText, Wallet, Receipt, Bell, BarChart3, Upload, Settings, LogOut, KanbanSquare } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 const main = [
   { title: "Dashboard", url: "/app", icon: LayoutDashboard, end: true },
   { title: "Contratos", url: "/app/contratos", icon: FileText },
+  { title: "Pipeline", url: "/app/pipeline", icon: KanbanSquare },
   { title: "Comissões", url: "/app/comissoes", icon: Wallet },
   { title: "Despesas", url: "/app/despesas", icon: Receipt },
   { title: "Alertas", url: "/app/alertas", icon: Bell },
