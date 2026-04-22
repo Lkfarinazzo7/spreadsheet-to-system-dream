@@ -121,6 +121,7 @@ export type Database = {
           categoria_id: string | null
           cliente: string
           created_at: string
+          data_reajuste: string | null
           data_vigencia: string | null
           id: string
           numero_proposta: string | null
@@ -138,6 +139,7 @@ export type Database = {
           categoria_id?: string | null
           cliente: string
           created_at?: string
+          data_reajuste?: string | null
           data_vigencia?: string | null
           id?: string
           numero_proposta?: string | null
@@ -155,6 +157,7 @@ export type Database = {
           categoria_id?: string | null
           cliente?: string
           created_at?: string
+          data_reajuste?: string | null
           data_vigencia?: string | null
           id?: string
           numero_proposta?: string | null
@@ -254,6 +257,57 @@ export type Database = {
         }
         Relationships: []
       }
+      pipeline_contratos: {
+        Row: {
+          canal_id: string | null
+          cliente: string
+          created_at: string
+          data_vigencia: string | null
+          etapa: Database["public"]["Enums"]["etapa_pipeline"]
+          id: string
+          numero_proposta: string | null
+          observacoes: string | null
+          operadora_id: string | null
+          posicao: number
+          tipo: Database["public"]["Enums"]["tipo_contrato"]
+          updated_at: string
+          user_id: string
+          valor_mensal: number
+        }
+        Insert: {
+          canal_id?: string | null
+          cliente: string
+          created_at?: string
+          data_vigencia?: string | null
+          etapa?: Database["public"]["Enums"]["etapa_pipeline"]
+          id?: string
+          numero_proposta?: string | null
+          observacoes?: string | null
+          operadora_id?: string | null
+          posicao?: number
+          tipo?: Database["public"]["Enums"]["tipo_contrato"]
+          updated_at?: string
+          user_id: string
+          valor_mensal?: number
+        }
+        Update: {
+          canal_id?: string | null
+          cliente?: string
+          created_at?: string
+          data_vigencia?: string | null
+          etapa?: Database["public"]["Enums"]["etapa_pipeline"]
+          id?: string
+          numero_proposta?: string | null
+          observacoes?: string | null
+          operadora_id?: string | null
+          posicao?: number
+          tipo?: Database["public"]["Enums"]["tipo_contrato"]
+          updated_at?: string
+          user_id?: string
+          valor_mensal?: number
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -283,6 +337,15 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
+      etapa_pipeline:
+        | "Montagem de contrato"
+        | "Enviado para assinatura"
+        | "Preenchimento da declaração de saúde"
+        | "Entrevista médica"
+        | "Em análise"
+        | "Pendências"
+        | "Aguardando vigência"
+        | "Implantado"
       status_contrato: "Ativo" | "Cancelado" | "Pendente"
       tipo_comissao: "Bancaria" | "Vida" | "Adesao"
       tipo_contrato: "PJ" | "PF" | "Adesao"
@@ -413,6 +476,16 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      etapa_pipeline: [
+        "Montagem de contrato",
+        "Enviado para assinatura",
+        "Preenchimento da declaração de saúde",
+        "Entrevista médica",
+        "Em análise",
+        "Pendências",
+        "Aguardando vigência",
+        "Implantado",
+      ],
       status_contrato: ["Ativo", "Cancelado", "Pendente"],
       tipo_comissao: ["Bancaria", "Vida", "Adesao"],
       tipo_contrato: ["PJ", "PF", "Adesao"],
