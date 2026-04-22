@@ -17,7 +17,6 @@ type Row = ContratoFormValues & {
   id: string;
   operadora?: { nome: string } | null;
   canal?: { nome: string } | null;
-  categoria?: { nome: string } | null;
 };
 
 export default function Contratos() {
@@ -32,7 +31,7 @@ export default function Contratos() {
   const load = async () => {
     const { data } = await supabase
       .from("contratos")
-      .select("*, operadora:operadoras(nome), canal:canais_venda(nome), categoria:categorias_plano(nome)")
+      .select("*, operadora:operadoras(nome), canal:canais_venda(nome)")
       .order("created_at", { ascending: false });
     setRows((data as any) ?? []);
   };
@@ -53,6 +52,7 @@ export default function Contratos() {
 
   const remove = async (id: string) => {
     if (!confirm("Excluir este contrato? As comissões vinculadas também serão removidas.")) return;
+    await supabase.from("comissoes").delete().eq("contrato_id", id);
     const { error } = await supabase.from("contratos").delete().eq("id", id);
     if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
     toast({ title: "Contrato excluído" });
@@ -66,10 +66,10 @@ export default function Contratos() {
       Tipo: r.tipo,
       Operadora: r.operadora?.nome,
       Canal: r.canal?.nome,
-      Categoria: r.categoria?.nome,
       "Valor Mensal": Number(r.valor_mensal),
       "Proporção": Number(r.proporcao_comissao),
       "Vigência": r.data_vigencia,
+      "Reajuste": r.data_reajuste,
       Status: r.status,
     }));
     const ws = XLSX.utils.json_to_sheet(data);
@@ -135,6 +135,7 @@ export default function Contratos() {
                 <TableHead>Operadora</TableHead>
                 <TableHead>Canal</TableHead>
                 <TableHead>Vigência</TableHead>
+                <TableHead>Reajuste</TableHead>
                 <TableHead className="text-right">Mensal</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-[100px]"></TableHead>
@@ -142,7 +143,7 @@ export default function Contratos() {
             </TableHeader>
             <TableBody>
               {filtered.length === 0 && (
-                <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-10">Nenhum contrato encontrado.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-10">Nenhum contrato encontrado.</TableCell></TableRow>
               )}
               {filtered.map((r) => (
                 <TableRow key={r.id}>
@@ -154,6 +155,7 @@ export default function Contratos() {
                   <TableCell>{r.operadora?.nome ?? "—"}</TableCell>
                   <TableCell>{r.canal?.nome ?? "—"}</TableCell>
                   <TableCell>{formatDate(r.data_vigencia)}</TableCell>
+                  <TableCell>{formatDate(r.data_reajuste)}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatCurrency(r.valor_mensal)}</TableCell>
                   <TableCell><Badge variant={statusVariant(r.status) as any}>{r.status}</Badge></TableCell>
                   <TableCell>
