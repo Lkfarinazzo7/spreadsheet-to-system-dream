@@ -244,7 +244,7 @@ export default function Dashboard() {
       </Card>
 
       {/* KPIs */}
-      <div className="grid gap-4 grid-cols-1 md:grid-cols-3 mb-6">
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-5 mb-6">
         {kpis.map((k) => (
           <Card key={k.label} className="overflow-hidden">
             <CardContent className="p-4">
@@ -252,7 +252,7 @@ export default function Dashboard() {
                 <span className="text-xs text-muted-foreground">{k.label}</span>
                 <k.icon className={`h-4 w-4 ${k.accent}`} />
               </div>
-              <div className="text-2xl font-semibold mt-2">{k.value}</div>
+              <div className="text-xl font-semibold mt-2">{k.value}</div>
             </CardContent>
           </Card>
         ))}
@@ -307,6 +307,62 @@ export default function Dashboard() {
                       formatter={(v: number) => formatCurrency(v)}
                     />
                     <Bar dataKey="value" fill="hsl(var(--success))" radius={[0, 4, 4, 0]}>
+                      <LabelList dataKey="value" position="right" formatter={(v: number) => formatCurrency(v)} fontSize={11} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Contratos por operadora</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div style={{ height: Math.max(220, contratosPorOperadora.length * 44) }}>
+              {contratosPorOperadora.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Sem contratos no período.</p>
+              ) : (
+                <ResponsiveContainer>
+                  <BarChart data={contratosPorOperadora} layout="vertical" margin={{ left: 8, right: 60 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis type="number" stroke="hsl(var(--muted-foreground))" fontSize={12} tickFormatter={(v) => formatCurrency(v)} />
+                    <YAxis type="category" dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={12} width={120} />
+                    <Tooltip
+                      contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }}
+                      formatter={(v: number) => formatCurrency(v)}
+                    />
+                    <Bar dataKey="value" fill="hsl(var(--primary) / 0.7)" radius={[0, 4, 4, 0]}>
+                      <LabelList dataKey="value" position="right" formatter={(v: number) => formatCurrency(v)} fontSize={11} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Contratos por canal</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div style={{ height: Math.max(220, contratosPorCanal.length * 44) }}>
+              {contratosPorCanal.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Sem contratos no período.</p>
+              ) : (
+                <ResponsiveContainer>
+                  <BarChart data={contratosPorCanal} layout="vertical" margin={{ left: 8, right: 60 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis type="number" stroke="hsl(var(--muted-foreground))" fontSize={12} tickFormatter={(v) => formatCurrency(v)} />
+                    <YAxis type="category" dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={12} width={120} />
+                    <Tooltip
+                      contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }}
+                      formatter={(v: number) => formatCurrency(v)}
+                    />
+                    <Bar dataKey="value" fill="hsl(var(--success) / 0.7)" radius={[0, 4, 4, 0]}>
                       <LabelList dataKey="value" position="right" formatter={(v: number) => formatCurrency(v)} fontSize={11} />
                     </Bar>
                   </BarChart>
