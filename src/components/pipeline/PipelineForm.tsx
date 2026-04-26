@@ -12,6 +12,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Loader2, AlertTriangle, Trash2 } from "lucide-react";
+import { DatePicker } from "@/components/ui/date-picker";
+import { MoneyInput } from "@/components/ui/money-input";
+import { maskPhone, getAge } from "@/lib/format";
 
 type Lookup = { id: string; nome: string };
 
@@ -19,14 +22,16 @@ export type Dependente = {
   parentesco: string;
   nome: string;
   cpf: string;
-  idade: string;
+  idade?: string;
+  data_nascimento?: string | null;
   plano_anterior: string;
 };
 
 export type Titular = {
   nome: string;
   cpf: string;
-  idade: string;
+  idade?: string;
+  data_nascimento?: string | null;
   telefone: string;
   email: string;
   endereco: string;
@@ -64,7 +69,7 @@ export type PipelineFormValues = {
 const emptyTitular = (): Titular => ({
   nome: "",
   cpf: "",
-  idade: "",
+  data_nascimento: null,
   telefone: "",
   email: "",
   endereco: "",
@@ -76,9 +81,24 @@ const emptyDependente = (): Dependente => ({
   parentesco: "",
   nome: "",
   cpf: "",
-  idade: "",
+  data_nascimento: null,
   plano_anterior: "",
 });
+
+const PARENTESCOS = [
+  "Cônjuge",
+  "Filho(a)",
+  "Irmão(ã)",
+  "Sobrinho(a)",
+  "Neto(a)",
+  "Mãe",
+  "Pai",
+  "Sogro(a)",
+  "Genro",
+  "Nora",
+] as const;
+
+const NENHUM_PLANO = "__nenhum__";
 
 const empty: PipelineFormValues = {
   cliente: "",
@@ -372,21 +392,16 @@ export function PipelineForm({
               </div>
 
               <div className="space-y-1.5">
-                <Label>Valor total (R$)</Label>
-                <Input type="number" step="0.01" value={form.valor_mensal}
-                  onChange={(e) => set("valor_mensal", Number(e.target.value))} />
+                <Label>Valor total</Label>
+                <MoneyInput value={form.valor_mensal} onChange={(n) => set("valor_mensal", n)} />
               </div>
               <div className="space-y-1.5">
                 <Label>Data de vigência</Label>
-                <Input type="date" value={form.data_vigencia ?? ""} onChange={(e) => set("data_vigencia", e.target.value)} />
+                <DatePicker value={form.data_vigencia ?? null} onChange={(iso) => set("data_vigencia", iso)} />
               </div>
               <div className="space-y-1.5">
                 <Label>Mês implantação/reajuste</Label>
-                <Input
-                  type="date"
-                  value={dp.data_reajuste ?? ""}
-                  onChange={(e) => setDP({ data_reajuste: e.target.value })}
-                />
+                <DatePicker value={dp.data_reajuste ?? null} onChange={(iso) => setDP({ data_reajuste: iso })} />
               </div>
 
               <div className="space-y-1.5 col-span-2 md:col-span-3">
