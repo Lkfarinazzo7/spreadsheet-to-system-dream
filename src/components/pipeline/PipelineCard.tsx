@@ -16,6 +16,7 @@ export type PipelineItem = {
   etapa: string;
   operadora?: { nome: string } | null;
   canal?: { nome: string } | null;
+  dados_proposta?: { vidas?: number } | null;
 };
 
 export function PipelineCard({
@@ -58,6 +59,9 @@ export function PipelineCard({
         {item.operadora?.nome && <div>🏥 {item.operadora.nome}</div>}
         {item.canal?.nome && <div>📍 {item.canal.nome}</div>}
         {item.data_vigencia && <div>📅 {formatDate(item.data_vigencia)}</div>}
+        {item.dados_proposta?.vidas != null && item.dados_proposta.vidas > 0 && (
+          <div>👥 {item.dados_proposta.vidas} vidas</div>
+        )}
       </div>
 
       <div className="mt-2 flex items-center justify-between">
