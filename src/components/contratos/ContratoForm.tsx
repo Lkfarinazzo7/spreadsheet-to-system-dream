@@ -10,6 +10,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import { DatePicker } from "@/components/ui/date-picker";
+import { MoneyInput } from "@/components/ui/money-input";
 
 type Lookup = { id: string; nome: string };
 
@@ -275,9 +277,8 @@ export function ContratoForm({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label>Valor mensal (R$)</Label>
-            <Input type="number" step="0.01" value={form.valor_mensal}
-              onChange={(e) => set("valor_mensal", Number(e.target.value))} />
+            <Label>Valor mensal</Label>
+            <MoneyInput value={form.valor_mensal} onChange={(n) => set("valor_mensal", n)} />
           </div>
           <div className="space-y-1.5">
             <Label>Proporção comissão (auto)</Label>
@@ -285,11 +286,11 @@ export function ContratoForm({
           </div>
           <div className="space-y-1.5">
             <Label>Data de vigência</Label>
-            <Input type="date" value={form.data_vigencia ?? ""} onChange={(e) => set("data_vigencia", e.target.value)} />
+            <DatePicker value={form.data_vigencia ?? null} onChange={(iso) => set("data_vigencia", iso)} />
           </div>
           <div className="space-y-1.5">
             <Label>Mês de reajuste</Label>
-            <Input type="date" value={form.data_reajuste ?? ""} onChange={(e) => set("data_reajuste", e.target.value)} />
+            <DatePicker value={form.data_reajuste ?? null} onChange={(iso) => set("data_reajuste", iso)} />
           </div>
           <div className="col-span-2 space-y-1.5">
             <Label>Observações</Label>
@@ -329,8 +330,15 @@ export function ContratoForm({
                     </div>
                     <div className="space-y-1" style={{ gridColumn: "span 1 / span 1" }}>
                       <Label className="text-xs">Parc.</Label>
-                      <Input className="h-9" type="number" min={1} value={c.parcela}
-                        onChange={(e) => updateComissao(idx, { parcela: Number(e.target.value) })} />
+                      <Input
+                        className="h-9"
+                        inputMode="numeric"
+                        value={String(c.parcela ?? "")}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/[^\d]/g, "");
+                          updateComissao(idx, { parcela: raw === "" ? 0 : Number(raw) });
+                        }}
+                      />
                     </div>
                     <div className="space-y-1" style={{ gridColumn: "span 2 / span 2" }}>
                       <Label className="text-xs">% s/ mensal</Label>
@@ -352,19 +360,25 @@ export function ContratoForm({
                       />
                     </div>
                     <div className="space-y-1" style={{ gridColumn: "span 2 / span 2" }}>
-                      <Label className="text-xs">Valor (R$)</Label>
-                      <Input className="h-9" type="number" step="0.01" value={c.valor}
-                        onChange={(e) => updateComissao(idx, { valor: Number(e.target.value), percentual: null })} />
+                      <Label className="text-xs">Valor</Label>
+                      <MoneyInput
+                        value={c.valor}
+                        onChange={(n) => updateComissao(idx, { valor: n, percentual: null })}
+                      />
                     </div>
                     <div className="space-y-1" style={{ gridColumn: "span 3 / span 3" }}>
                       <Label className="text-xs">Previsto p/</Label>
-                      <Input className="h-9" type="date" value={c.mes_previsto}
-                        onChange={(e) => updateComissao(idx, { mes_previsto: e.target.value })} />
+                      <DatePicker
+                        value={c.mes_previsto || null}
+                        onChange={(iso) => updateComissao(idx, { mes_previsto: iso ?? "" })}
+                      />
                     </div>
                     <div className="space-y-1" style={{ gridColumn: "span 2 / span 2" }}>
                       <Label className="text-xs">Recebido em</Label>
-                      <Input className="h-9" type="date" value={c.data_pagamento ?? ""}
-                        onChange={(e) => updateComissao(idx, { data_pagamento: e.target.value || null })} />
+                      <DatePicker
+                        value={c.data_pagamento ?? null}
+                        onChange={(iso) => updateComissao(idx, { data_pagamento: iso })}
+                      />
                     </div>
                     <div className="flex justify-end" style={{ gridColumn: "span 1 / span 1" }}>
                       <Button type="button" size="icon" variant="ghost" onClick={() => removeComissao(idx)}>

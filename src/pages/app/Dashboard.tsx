@@ -8,6 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { PageHeader } from "@/components/layout/PageHeader";
 import { formatCurrency } from "@/lib/format";
 import { Wallet, CircleDollarSign, TrendingUp, ChevronLeft, ChevronRight, CalendarRange } from "lucide-react";
+import { FileText, Hash } from "lucide-react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -30,6 +31,14 @@ type Comissao = {
     operadora_id: string | null;
     canal_id: string | null;
   } | null;
+};
+
+type Contrato = {
+  id: string;
+  valor_mensal: number;
+  operadora_id: string | null;
+  canal_id: string | null;
+  data_vigencia: string | null;
 };
 
 const MONTHS_PT = [
@@ -58,20 +67,25 @@ export default function Dashboard() {
   }, [mode, monthDate, customStart, customEnd]);
 
   const [comissoes, setComissoes] = useState<Comissao[]>([]);
+  const [contratos, setContratos] = useState<Contrato[]>([]);
   const [operadoras, setOperadoras] = useState<{ id: string; nome: string }[]>([]);
   const [canais, setCanais] = useState<{ id: string; nome: string }[]>([]);
 
   useEffect(() => {
     document.title = "Dashboard — Corretor SaaS";
     (async () => {
-      const [k, o, cn] = await Promise.all([
+      const [k, ct, o, cn] = await Promise.all([
         supabase
           .from("comissoes")
           .select("id,contrato_id,mes_previsto,valor,pago,data_pagamento,contrato:contratos(operadora_id,canal_id)"),
+        supabase
+          .from("contratos")
+          .select("id,valor_mensal,operadora_id,canal_id,data_vigencia"),
         supabase.from("operadoras").select("id,nome"),
         supabase.from("canais_venda").select("id,nome"),
       ]);
       setComissoes((k.data as any) ?? []);
+      setContratos((ct.data as any) ?? []);
       setOperadoras((o.data as any) ?? []);
       setCanais((cn.data as any) ?? []);
     })();
@@ -85,13 +99,28 @@ export default function Dashboard() {
     });
   }, [comissoes, period]);
 
+  // Contratos cujo data_vigencia cai no período
+  const contratosPeriodo = useMemo(() => {
+    return contratos.filter(
+      (c) => c.data_vigencia && c.data_vigencia >= period.start && c.data_vigencia <= period.end,
+    );
+  }, [contratos, period]);
+
   const stats = useMemo(() => {
     const recebidas = inPeriod.filter((c) => c.pago);
     const aReceber = inPeriod.filter((c) => !c.pago).reduce((s, c) => s + Number(c.valor), 0);
     const receitaMes = recebidas.reduce((s, c) => s + Number(c.valor), 0);
-    const ticketMedio = recebidas.length ? receitaMes / recebidas.length : 0;
-    return { receitaMes, aReceber, ticketMedio };
-  }, [inPeriod]);
+    const ticketReceita = recebidas.length ? receitaMes / recebidas.length : 0;
+    const totalContratos = contratosPeriodo.reduce((s, c) => s + Number(c.valor_mensal || 0), 0);
+    const ticketContrato = contratosPeriodo.length ? totalContratos / contratosPeriodo.length : 0;
+    return {
+      receitaMes,
+      aReceber,
+      ticketReceita,
+      qtdContratos: contratosPeriodo.length,
+      ticketContrato,
+    };
+  }, [inPeriod, contratosPeriodo]);
 
   // Por operadora — soma do valor recebido no período, ordem decrescente
   const porOperadora = useMemo(() => {
@@ -116,6 +145,25 @@ export default function Dashboard() {
     return Array.from(map, ([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
   }, [inPeriod, canais]);
 
+  // Contratos por operadora — soma de valor_mensal dos contratos do período
+  const contratosPorOperadora = useMemo(() => {
+    const map = new Map<string, number>();
+    contratosPeriodo.forEach((c) => {
+      const nome = operadoras.find((o) => o.id === c.operadora_id)?.nome ?? "Sem operadora";
+      map.set(nome, (map.get(nome) ?? 0) + Number(c.valor_mensal || 0));
+    });
+    return Array.from(map, ([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+  }, [contratosPeriodo, operadoras]);
+
+  const contratosPorCanal = useMemo(() => {
+    const map = new Map<string, number>();
+    contratosPeriodo.forEach((c) => {
+      const nome = canais.find((o) => o.id === c.canal_id)?.nome ?? "Sem canal";
+      map.set(nome, (map.get(nome) ?? 0) + Number(c.valor_mensal || 0));
+    });
+    return Array.from(map, ([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+  }, [contratosPeriodo, canais]);
+
   const proximosVenc = useMemo(() => {
     const now = fmtIso(today);
     const limit = new Date();
@@ -129,8 +177,10 @@ export default function Dashboard() {
 
   const kpis = [
     { label: "Receita do período", value: formatCurrency(stats.receitaMes), icon: CircleDollarSign, accent: "text-success" },
+    { label: "Contratos do período", value: String(stats.qtdContratos), icon: Hash, accent: "text-primary" },
     { label: "Comissão a receber", value: formatCurrency(stats.aReceber), icon: Wallet, accent: "text-primary" },
-    { label: "Ticket médio de recebimento", value: formatCurrency(stats.ticketMedio), icon: TrendingUp, accent: "text-foreground" },
+    { label: "Ticket médio de receita", value: formatCurrency(stats.ticketReceita), icon: TrendingUp, accent: "text-success" },
+    { label: "Ticket médio de contrato", value: formatCurrency(stats.ticketContrato), icon: FileText, accent: "text-primary" },
   ];
 
   const monthLabel = `${MONTHS_PT[monthDate.getMonth()]} ${monthDate.getFullYear()}`;
@@ -194,7 +244,7 @@ export default function Dashboard() {
       </Card>
 
       {/* KPIs */}
-      <div className="grid gap-4 grid-cols-1 md:grid-cols-3 mb-6">
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-5 mb-6">
         {kpis.map((k) => (
           <Card key={k.label} className="overflow-hidden">
             <CardContent className="p-4">
@@ -202,7 +252,7 @@ export default function Dashboard() {
                 <span className="text-xs text-muted-foreground">{k.label}</span>
                 <k.icon className={`h-4 w-4 ${k.accent}`} />
               </div>
-              <div className="text-2xl font-semibold mt-2">{k.value}</div>
+              <div className="text-xl font-semibold mt-2">{k.value}</div>
             </CardContent>
           </Card>
         ))}
@@ -257,6 +307,62 @@ export default function Dashboard() {
                       formatter={(v: number) => formatCurrency(v)}
                     />
                     <Bar dataKey="value" fill="hsl(var(--success))" radius={[0, 4, 4, 0]}>
+                      <LabelList dataKey="value" position="right" formatter={(v: number) => formatCurrency(v)} fontSize={11} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Contratos por operadora</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div style={{ height: Math.max(220, contratosPorOperadora.length * 44) }}>
+              {contratosPorOperadora.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Sem contratos no período.</p>
+              ) : (
+                <ResponsiveContainer>
+                  <BarChart data={contratosPorOperadora} layout="vertical" margin={{ left: 8, right: 60 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis type="number" stroke="hsl(var(--muted-foreground))" fontSize={12} tickFormatter={(v) => formatCurrency(v)} />
+                    <YAxis type="category" dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={12} width={120} />
+                    <Tooltip
+                      contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }}
+                      formatter={(v: number) => formatCurrency(v)}
+                    />
+                    <Bar dataKey="value" fill="hsl(var(--primary) / 0.7)" radius={[0, 4, 4, 0]}>
+                      <LabelList dataKey="value" position="right" formatter={(v: number) => formatCurrency(v)} fontSize={11} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Contratos por canal</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div style={{ height: Math.max(220, contratosPorCanal.length * 44) }}>
+              {contratosPorCanal.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Sem contratos no período.</p>
+              ) : (
+                <ResponsiveContainer>
+                  <BarChart data={contratosPorCanal} layout="vertical" margin={{ left: 8, right: 60 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis type="number" stroke="hsl(var(--muted-foreground))" fontSize={12} tickFormatter={(v) => formatCurrency(v)} />
+                    <YAxis type="category" dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={12} width={120} />
+                    <Tooltip
+                      contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }}
+                      formatter={(v: number) => formatCurrency(v)}
+                    />
+                    <Bar dataKey="value" fill="hsl(var(--success) / 0.7)" radius={[0, 4, 4, 0]}>
                       <LabelList dataKey="value" position="right" formatter={(v: number) => formatCurrency(v)} fontSize={11} />
                     </Bar>
                   </BarChart>
