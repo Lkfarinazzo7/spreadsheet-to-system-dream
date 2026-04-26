@@ -13,8 +13,7 @@ import { ContratoForm, ContratoFormValues } from "@/components/contratos/Contrat
 
 const ETAPAS = [
   "Montagem de contrato",
-  "Enviado para assinatura",
-  "Preenchimento da declaração de saúde",
+  "Assinatura / Declaração de saúde",
   "Entrevista médica",
   "Em análise",
   "Pendências",

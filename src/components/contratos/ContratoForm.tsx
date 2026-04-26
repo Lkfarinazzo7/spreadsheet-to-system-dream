@@ -20,6 +20,8 @@ export type ComissaoLine = {
   valor: number;
   mes_previsto: string;
   data_pagamento?: string | null;
+  // UI-only field: percent of valor_mensal that defines `valor`. Optional.
+  percentual?: number | null;
 };
 
 export type ContratoFormValues = {
@@ -51,6 +53,20 @@ function addOneYear(iso: string): string {
   return dt.toISOString().slice(0, 10);
 }
 
+const today = () => new Date().toISOString().slice(0, 10);
+
+const defaultComissoes = (): ComissaoLine[] => {
+  const t = today();
+  return [1, 2, 3].map((p) => ({
+    tipo: "Bancaria",
+    parcela: p,
+    valor: 0,
+    percentual: null,
+    mes_previsto: t,
+    data_pagamento: null,
+  }));
+};
+
 export function ContratoForm({
   open,
   onOpenChange,
@@ -76,7 +92,7 @@ export function ContratoForm({
     setForm(initial ?? empty);
     setRemovedComissoes([]);
     if (!initial?.id) {
-      setComissoes([]);
+      setComissoes(defaultComissoes());
     }
   }, [initial, open]);
 
@@ -109,6 +125,19 @@ export function ContratoForm({
     }
   }, [form.data_vigencia]);
 
+  // Recalculate `valor` for lines that have a percentual whenever valor_mensal changes
+  useEffect(() => {
+    const mensal = Number(form.valor_mensal) || 0;
+    setComissoes((prev) =>
+      prev.map((c) =>
+        c.percentual != null && !Number.isNaN(c.percentual)
+          ? { ...c, valor: Number(((mensal * c.percentual) / 100).toFixed(2)) }
+          : c,
+      ),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.valor_mensal]);
+
   // Proporção calculada
   const proporcao = useMemo(() => {
     const total = comissoes.reduce((s, c) => s + (Number(c.valor) || 0), 0);
@@ -123,7 +152,7 @@ export function ContratoForm({
     const nextParcela = (comissoes[comissoes.length - 1]?.parcela ?? 0) + 1;
     setComissoes((p) => [
       ...p,
-      { tipo: "Bancaria", parcela: nextParcela, valor: 0, mes_previsto: "", data_pagamento: null },
+      { tipo: "Bancaria", parcela: nextParcela, valor: 0, percentual: null, mes_previsto: today(), data_pagamento: null },
     ]);
   };
 
@@ -262,17 +291,6 @@ export function ContratoForm({
             <Label>Mês de reajuste</Label>
             <Input type="date" value={form.data_reajuste ?? ""} onChange={(e) => set("data_reajuste", e.target.value)} />
           </div>
-          <div className="space-y-1.5">
-            <Label>Status</Label>
-            <Select value={form.status} onValueChange={(v) => set("status", v as any)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Ativo">Ativo</SelectItem>
-                <SelectItem value="Pendente">Pendente</SelectItem>
-                <SelectItem value="Cancelado">Cancelado</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
           <div className="col-span-2 space-y-1.5">
             <Label>Observações</Label>
             <Textarea rows={2} value={form.observacoes ?? ""} onChange={(e) => set("observacoes", e.target.value)} />
@@ -297,8 +315,8 @@ export function ContratoForm({
             ) : (
               <div className="space-y-2">
                 {comissoes.map((c, idx) => (
-                  <div key={idx} className="grid grid-cols-12 gap-2 items-end border rounded-md p-2">
-                    <div className="col-span-3 space-y-1">
+                  <div key={idx} className="grid grid-cols-14 gap-2 items-end border rounded-md p-2" style={{ gridTemplateColumns: "repeat(14, minmax(0, 1fr))" }}>
+                    <div className="col-span-3 space-y-1" style={{ gridColumn: "span 3 / span 3" }}>
                       <Label className="text-xs">Tipo</Label>
                       <Select value={c.tipo} onValueChange={(v) => updateComissao(idx, { tipo: v as any })}>
                         <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
@@ -309,27 +327,46 @@ export function ContratoForm({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="col-span-1 space-y-1">
+                    <div className="space-y-1" style={{ gridColumn: "span 1 / span 1" }}>
                       <Label className="text-xs">Parc.</Label>
                       <Input className="h-9" type="number" min={1} value={c.parcela}
                         onChange={(e) => updateComissao(idx, { parcela: Number(e.target.value) })} />
                     </div>
-                    <div className="col-span-2 space-y-1">
+                    <div className="space-y-1" style={{ gridColumn: "span 2 / span 2" }}>
+                      <Label className="text-xs">% s/ mensal</Label>
+                      <Input
+                        className="h-9"
+                        type="number"
+                        step="0.01"
+                        placeholder="ex: 100"
+                        value={c.percentual ?? ""}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          const pct = raw === "" ? null : Number(raw);
+                          const mensal = Number(form.valor_mensal) || 0;
+                          updateComissao(idx, {
+                            percentual: pct,
+                            valor: pct !== null && !Number.isNaN(pct) ? Number(((mensal * pct) / 100).toFixed(2)) : c.valor,
+                          });
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1" style={{ gridColumn: "span 2 / span 2" }}>
                       <Label className="text-xs">Valor (R$)</Label>
                       <Input className="h-9" type="number" step="0.01" value={c.valor}
-                        onChange={(e) => updateComissao(idx, { valor: Number(e.target.value) })} />
+                        onChange={(e) => updateComissao(idx, { valor: Number(e.target.value), percentual: null })} />
                     </div>
-                    <div className="col-span-3 space-y-1">
+                    <div className="space-y-1" style={{ gridColumn: "span 3 / span 3" }}>
                       <Label className="text-xs">Previsto p/</Label>
                       <Input className="h-9" type="date" value={c.mes_previsto}
                         onChange={(e) => updateComissao(idx, { mes_previsto: e.target.value })} />
                     </div>
-                    <div className="col-span-2 space-y-1">
+                    <div className="space-y-1" style={{ gridColumn: "span 2 / span 2" }}>
                       <Label className="text-xs">Recebido em</Label>
                       <Input className="h-9" type="date" value={c.data_pagamento ?? ""}
                         onChange={(e) => updateComissao(idx, { data_pagamento: e.target.value || null })} />
                     </div>
-                    <div className="col-span-1 flex justify-end">
+                    <div className="flex justify-end" style={{ gridColumn: "span 1 / span 1" }}>
                       <Button type="button" size="icon" variant="ghost" onClick={() => removeComissao(idx)}>
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>

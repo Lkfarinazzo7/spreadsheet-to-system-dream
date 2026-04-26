@@ -1,49 +1,32 @@
+# Ajustes solicitados
 
-# Ajustes nos Contratos + novo Pipeline (Kanban)
+## 1. Dashboard
+- **Seletor de período** no topo: setas ◀ ▶ para navegar mês a mês (Abril, Maio, Junho…) + botão "Período personalizado" que abre dois date pickers (início/fim).
+- **KPIs**: manter apenas **Receita do mês**, **Comissão a receber** e **Ticket médio de recebimento** (média do valor das comissões pagas no período). Remover *Comissão recebida*, *Contratos ativos*.
+- **Remover** completamente o gráfico "Comissão mês a mês" (previsto vs recebido).
+- **Receita por operadora**: trocar pizza por **gráfico de barras horizontais**, ordenado do maior para o menor valor recebido.
+- **Contratos por canal**: trocar para **valor por canal** (soma de comissão recebida no período), ordenado do maior para o menor.
+- Lista de "Próximos vencimentos" mantida.
 
-## 1. Ajustes no formulário de contrato
-- **Remover** o campo "Categoria do plano" do formulário e da listagem.
-- **Proporção de comissão** deixa de ser digitada: vira **calculada automaticamente** = `soma das comissões cadastradas ÷ valor mensal`. Exibida como campo somente-leitura ("3.80x") que se atualiza ao adicionar/editar parcelas.
-- **Mês de reajuste**: novo campo de data. Quando preencher "Data de vigência", auto-preenche reajuste com **mesmo dia/mês do ano seguinte**, mas permite edição manual.
-- **Comissões embutidas no formulário**: dentro do mesmo modal de contrato, uma seção "Comissões deste contrato" com mini-tabela onde você adiciona linhas: **tipo** (Bancária / Bonificação por Vida / Adesão), **parcela**, **valor**, **data prevista de recebimento** e **data efetiva de recebimento** (quando preenchida, marca como pago automaticamente). Botões "+ Adicionar comissão" e remover por linha. Salvas junto com o contrato.
+## 2. Contratos – formulário
+- **Remover o seletor "Status"** do form de novo contrato (status fica fixo "Ativo" no insert).
+- **Pré-preencher 3 parcelas** ao criar novo contrato: Bancária #1, Bancária #2, Bancária #3.
+- **Nova coluna "% sobre mensal"** em cada linha de comissão. Quando preenchida, calcula `valor = valor_mensal * (% / 100)` automaticamente. Editar o valor manualmente desvincula o cálculo dessa linha.
+- **Datas** "Previsto p/" e "Recebido em" iniciam pré-preenchidas com a **data de hoje** ao adicionar nova parcela / abrir form de novo contrato.
 
-## 2. Novo módulo: Pipeline de Contratos (Kanban)
-Nova aba no menu lateral chamada **"Pipeline"** (entre Contratos e Comissões), com visão Kanban arrastável das propostas ainda não implantadas.
+## 3. Pipeline (Kanban)
+- **Mesclar etapas**: "Enviado para assinatura" + "Preenchimento da declaração de saúde" → uma única coluna **"Assinatura / Declaração de saúde"**. Migration renomeia o enum e move dados existentes.
+- **Corrigir bug de Nova Proposta**: garantir que o form sempre crie corretamente (reset de estado garantido ao abrir, toast de confirmação, recarregamento da lista).
 
-**Etapas (colunas):**
-1. Montagem de contrato
-2. Enviado para assinatura
-3. Preenchimento da declaração de saúde
-4. Entrevista médica
-5. Em análise
-6. Pendências
-7. Aguardando vigência
-8. Implantado
+## 4. Comissões
+- **Remover a aba "Previsto × Recebido"** completamente — fica só a aba de parcelas (sem tabs).
 
-**Cartão do pipeline** contém: cliente, operadora, tipo (PF/PJ/Adesão), valor mensal estimado, canal, data prevista de vigência, observação curta. Drag-and-drop entre colunas atualiza o status. Botão "+ Nova proposta" abre formulário enxuto.
-
-**Conversão automática para Contrato:**
-- Ao mover um cartão para **"Implantado"** (ou alterar o status para Implantado), o sistema:
-  1. Cria/atualiza o registro em **Contratos** com status "Ativo".
-  2. Calcula automaticamente o mês de reajuste (1 ano após vigência).
-  3. Se faltar alguma informação obrigatória (operadora, valor mensal, data de vigência, comissões), abre um modal pedindo para completar antes de finalizar a implantação. O cartão só sai do Kanban depois que o contrato for completado.
-- O cartão implantado some do Kanban e passa a viver na lista de Contratos.
-
-## 3. Limpeza visual
-- Coluna "Categoria" removida das tabelas e exportações.
-- Nova coluna "Reajuste" exibida em Contratos.
-- Filtro de tipo continua; filtro de categoria removido.
-
-## Detalhes técnicos
-- **Banco**:
-  - Nova tabela `pipeline_contratos` (mesmos campos principais de `contratos` + `etapa` enum + `posicao` int para ordenação no Kanban) com RLS por `user_id`.
-  - Adicionar coluna `data_reajuste date` em `contratos`.
-  - `proporcao_comissao` deixa de ser editável na UI mas permanece na tabela (recalculada client-side via trigger ou no save do contrato).
-- **UI**:
-  - `ContratoForm.tsx`: remove `categoria`, torna `proporcao_comissao` readonly (derivada), adiciona `data_reajuste` com auto-preenchimento (`useEffect` em `data_vigencia`), embute sub-tabela de comissões com estado local sincronizado no submit (insert/update/delete em `comissoes`).
-  - Novo `src/pages/app/Pipeline.tsx` + `src/components/pipeline/PipelineBoard.tsx` + `PipelineCard.tsx` + `PipelineForm.tsx`. Drag-and-drop com `@dnd-kit/core` (lib leve, sem dependências grandes).
-  - `src/App.tsx`: nova rota `/app/pipeline`.
-  - `AppSidebar.tsx`: novo item "Pipeline" com ícone `KanbanSquare`.
-  - Lógica de "implantar": função `promoteToContrato(pipelineId)` que valida campos obrigatórios; se faltar algo, reabre modal completo para preencher antes de migrar.
-
-Pronto para implementar quando aprovar.
+## Implementação técnica
+- Migration:
+  - `ALTER TYPE etapa_pipeline RENAME VALUE 'Enviado para assinatura' TO 'Assinatura / Declaração de saúde';`
+  - `UPDATE pipeline_contratos SET etapa = 'Assinatura / Declaração de saúde' WHERE etapa = 'Preenchimento da declaração de saúde';`
+  - Remover valor antigo do enum (recriar enum sem ele).
+- `Dashboard.tsx`: adiciona estado `periodStart`/`periodEnd`, controles de navegação, recalcula `stats`/`porOperadora`/`porCanal` filtrando por período; troca PieChart por BarChart horizontal ordenado.
+- `ContratoForm.tsx`: remove campo Status do JSX; ao abrir em modo "novo" inicializa `comissoes` com 3 linhas Bancárias; adiciona campo `percentual` (state local não persistido) por linha que recalcula `valor` quando alterado; default de `mes_previsto` e `data_pagamento` = hoje.
+- `Pipeline.tsx`: array `ETAPAS` com 7 itens; `PipelineForm` default etapa `"Montagem de contrato"`.
+- `Comissoes.tsx`: remover `<Tabs>`, deixar conteúdo direto.
