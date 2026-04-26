@@ -1,74 +1,76 @@
 
-# Limpeza de menu + formulário completo de proposta no Kanban
+# Correções e melhorias — Pipeline, Contratos e Dashboard
 
-## 1. Remover módulos
-- **Alertas**: remover do menu lateral, remover rota `/app/alertas` e excluir `src/pages/app/Alertas.tsx`.
-- **Importar planilhas**: remover do menu, remover rota `/app/importar` e excluir `src/pages/app/Importar.tsx`. (Será reintroduzido no futuro em outro lugar.)
-- Limpar imports em `src/App.tsx` e `src/components/layout/AppSidebar.tsx`.
+## 1. 🐛 Bug crítico: erro "out of range for type integer" ao salvar proposta
+A coluna `posicao` em `pipeline_contratos` é `integer` (limite ~2.1 bi), mas estamos gravando `Date.now()` (~1.78 trilhões). Por isso o erro do print.
 
-## 2. Corrigir bug "Nova proposta não cria"
-Causa provável: o `onSaved` recarrega a lista mas a query de `load()` filtra `neq("etapa","Implantado")` e o `posicao` default (`0`) faz a ordenação esconder ou amontoar. Vou:
-- Garantir `posicao` único no insert (usar `Date.now()` ou `max(posicao)+1` da etapa).
-- Fechar o modal **somente após** insert bem-sucedido + `await load()` garantido.
-- Toast de sucesso já existe; vou verificar caminho do erro silencioso (campo obrigatório novo). Se faltar `cliente`, o `required` HTML mostra a mensagem.
-- Adicionar log/erro visível se `insert` falhar por RLS.
+**Correções:**
+- **Migration**: alterar `pipeline_contratos.posicao` de `integer` para `bigint` (suporta `Date.now()` sem problemas).
+- Mantém o uso de `Date.now()` como ordenação (sempre crescente, evita conflito).
 
-## 3. Novo formulário de Proposta (Kanban) — campos
-Reestruturar `PipelineForm.tsx` em **3 seções colapsáveis** dentro do modal (modal mais largo, scroll interno):
+## 2. 📋 Pipeline / Nova proposta — melhorias no formulário
 
-### Seção A — Dados do contrato
-- **Proposta** (texto livre, opcional)
-- **Tipo contrato** (PF / PJ / Adesão)
-- **CNPJ/CPF** (texto livre, máscara automática conforme tipo)
-- **Operadora** (select das cadastradas)
-- **Categoria** (texto livre)
-- **Acomodação** (obrigatório: Enfermaria / Apartamento)
-- **Coparticipação** (obrigatório: Total / Parcial / Não possui)
-- **Vidas** (número) → quando preenchido, abre dois sub-campos: **Titulares** (número) e **Dependentes** (número). Validação: `titulares + dependentes = vidas`.
-- **Valor** (R$, valor total mensal do contrato)
-- **Data de vigência** (date)
-- **Mês de implantação/reajuste** (auto-preenchido = mesmo mês/dia 1 ano após vigência, editável)
-- **Endereço da empresa** (textarea, texto livre)
+### Valor total
+- Trocar `<input type="number">` por **input com máscara monetária BRL** (R$ 1.234,56). Digitação livre, parsing para número antes de salvar. Aplicar também no campo "Valor total" e nos titulares onde houver valor.
 
-### Seção B — Titulares (repetidor dinâmico)
-Quantidade de blocos = valor digitado em "Titulares". Cada bloco:
-- Nome do titular
-- CPF
-- Idade
-- Telefone
-- E-mail
-- Endereço (texto livre)
-- Plano anterior
-- **Dependentes deste titular** (input numérico) — define quantos sub-blocos de dependente aparecem dentro do titular
+### Telefone
+- Aplicar máscara **(11) 91234-5678** / **(11) 1234-5678**. Aceita apenas dígitos, formata em tempo real.
 
-### Seção C — Dependentes (dentro de cada titular)
-Para cada dependente do titular:
-- Grau de parentesco
-- Nome
-- CPF
-- Idade
-- Plano anterior
+### Idade → Data de nascimento
+- Substituir o campo "Idade" (titular e dependente) por **"Data de nascimento"** (date picker).
+- Idade exibida automaticamente ao lado (calculada a partir da data).
+- Armazenar `data_nascimento` no JSON; manter `idade` derivada.
 
-Validação cruzada: soma dos dependentes de todos os titulares deve bater com "Dependentes" da seção A (alerta amarelo se não bater, mas permite salvar).
+### Plano anterior
+- Trocar `Input` livre por `Select` populado com as **operadoras cadastradas** (mesma lista de `operadoras` ativas) + opção "Nenhum / Não possui".
+- Vale para titulares e dependentes.
 
-## 4. Persistência
-Como o usuário pediu **só na Pipeline**, nada vai pra `contratos` ainda. Estratégia simples para evitar 5 tabelas novas:
-- Adicionar coluna **`dados_proposta jsonb`** (nullable) em `pipeline_contratos` via migration.
-- Salvar todo o bloco de campos detalhados (acomodação, coparticipação, vidas, titulares[], endereço, etc.) dentro desse JSON.
-- Os campos já existentes da tabela (`cliente`, `tipo`, `operadora_id`, `valor_mensal`, `data_vigencia`, `numero_proposta`, `observacoes`) continuam usados normalmente — `cliente` recebe nome da empresa/PF principal, `valor_mensal` recebe o valor total.
-- Quando promover para contrato, o JSON viaja como `observacoes` estruturadas no contrato (ou ignorado, conforme combinado: "só na pipeline").
+### Parentesco (dependente)
+- Trocar `Input` por `Select` com opções fixas: **Cônjuge, Filho(a), Irmão(ã), Sobrinho(a), Neto(a), Mãe, Pai, Sogro(a), Genro, Nora**.
 
-## 5. Cartão do Kanban
-Mostrar resumo enxuto: cliente, operadora, tipo, valor, vidas (se preenchido), data prevista. Detalhes completos no modal de edição.
+## 3. 💰 Contratos — formulário de comissões
 
-## 6. Arquivos afetados
-- **Migration**: `ALTER TABLE pipeline_contratos ADD COLUMN dados_proposta jsonb;`
-- `src/App.tsx` — remover rotas Alertas/Importar
-- `src/components/layout/AppSidebar.tsx` — remover itens
-- `src/pages/app/Alertas.tsx` — **deletar**
-- `src/pages/app/Importar.tsx` — **deletar**
-- `src/components/pipeline/PipelineForm.tsx` — reescrever com novo schema completo + correção do bug de criação
-- `src/components/pipeline/PipelineCard.tsx` — exibir vidas se houver
-- `src/pages/app/Pipeline.tsx` — passar/receber `dados_proposta` no `handleEdit`
+### Bug do campo "Parcela"
+- Atualmente `value={c.parcela}` com `type="number"` reseta indevidamente. Trocar para string controlada (`value` como string, parse só no save) — ou usar `defaultValue` + onBlur. Garantir que seja editável livremente (1, 2, 3, 10…).
 
-Pronto para implementar quando aprovar.
+### Date picker de "Recebido em"
+- O `<input type="date">` puro às vezes não abre o calendário. Substituir por componente combinado: **input de texto + popover com `Calendar`** (já existe `@/components/ui/calendar`). Permitir digitação manual E seleção visual no calendário.
+- Aplicar o mesmo padrão em "Previsto p/" e nos campos de data do form de contrato (vigência, reajuste).
+
+## 4. 📊 Dashboard — novas métricas
+
+### KPIs (5 cards em vez de 3)
+1. Receita do período (já existe — soma das comissões pagas)
+2. Comissão a receber (já existe)
+3. **Contratos do período** (novo) — qtd de contratos com `data_vigencia` dentro do período
+4. **Ticket médio de contrato** (novo) — `soma(valor_mensal dos contratos do período) / qtd contratos`
+5. **Ticket médio de receita** (renomear o atual "Ticket médio de recebimento")
+
+### Gráficos (4 em vez de 2, em grid 2x2)
+1. **Receita por operadora** (já existe)
+2. **Receita por canal** (já existe)
+3. **Contratos por operadora** (novo) — soma de `valor_mensal` dos contratos por operadora, ordem decrescente
+4. **Contratos por canal** (novo) — idem por canal
+
+> Diferença chave: "Receita" = comissões pagas no período. "Contrato" = `valor_mensal` dos contratos cuja `data_vigencia` cai no período.
+
+### Buscar contratos no Dashboard
+- Adicionar query `supabase.from("contratos").select("id, valor_mensal, operadora_id, canal_id, data_vigencia")` no `useEffect` inicial.
+- Filtrar por `data_vigencia` dentro do período.
+
+## 5. Detalhes técnicos
+
+- **Máscara monetária**: helper `formatBRL(n)` + `parseBRL(str)` em `src/lib/format.ts`. Componente `<MoneyInput>` controlado.
+- **Máscara telefone**: helper `maskPhone(str)` em `format.ts`.
+- **Cálculo idade**: `getAge(birthDate)` retorna anos completos.
+- **DatePicker**: criar `src/components/ui/date-picker.tsx` reutilizável (Input + Popover + Calendar do shadcn).
+- **JSON `dados_proposta`**: adicionar campo `data_nascimento` em `Titular` e `Dependente` (mantém retrocompat — `idade` continua opcional).
+- **Migration**: `ALTER TABLE pipeline_contratos ALTER COLUMN posicao TYPE bigint;`
+
+## Arquivos afetados
+- `supabase/migrations/...` (nova migration: posicao → bigint)
+- `src/lib/format.ts` (helpers BRL, telefone, idade)
+- `src/components/ui/date-picker.tsx` (novo)
+- `src/components/pipeline/PipelineForm.tsx` (máscaras, selects, datas, parentesco)
+- `src/components/contratos/ContratoForm.tsx` (parcela editável, date pickers)
+- `src/pages/app/Dashboard.tsx` (5 KPIs, 4 gráficos, query de contratos)
