@@ -262,6 +262,7 @@ export type Database = {
           canal_id: string | null
           cliente: string
           created_at: string
+          dados_proposta: Json | null
           data_vigencia: string | null
           etapa: Database["public"]["Enums"]["etapa_pipeline"]
           id: string
@@ -278,6 +279,7 @@ export type Database = {
           canal_id?: string | null
           cliente: string
           created_at?: string
+          dados_proposta?: Json | null
           data_vigencia?: string | null
           etapa?: Database["public"]["Enums"]["etapa_pipeline"]
           id?: string
@@ -294,6 +296,7 @@ export type Database = {
           canal_id?: string | null
           cliente?: string
           created_at?: string
+          dados_proposta?: Json | null
           data_vigencia?: string | null
           etapa?: Database["public"]["Enums"]["etapa_pipeline"]
           id?: string
