@@ -20,6 +20,8 @@ export type ComissaoLine = {
   valor: number;
   mes_previsto: string;
   data_pagamento?: string | null;
+  // UI-only field: percent of valor_mensal that defines `valor`. Optional.
+  percentual?: number | null;
 };
 
 export type ContratoFormValues = {
@@ -51,6 +53,20 @@ function addOneYear(iso: string): string {
   return dt.toISOString().slice(0, 10);
 }
 
+const today = () => new Date().toISOString().slice(0, 10);
+
+const defaultComissoes = (): ComissaoLine[] => {
+  const t = today();
+  return [1, 2, 3].map((p) => ({
+    tipo: "Bancaria",
+    parcela: p,
+    valor: 0,
+    percentual: null,
+    mes_previsto: t,
+    data_pagamento: null,
+  }));
+};
+
 export function ContratoForm({
   open,
   onOpenChange,
@@ -76,7 +92,7 @@ export function ContratoForm({
     setForm(initial ?? empty);
     setRemovedComissoes([]);
     if (!initial?.id) {
-      setComissoes([]);
+      setComissoes(defaultComissoes());
     }
   }, [initial, open]);
 
@@ -123,7 +139,7 @@ export function ContratoForm({
     const nextParcela = (comissoes[comissoes.length - 1]?.parcela ?? 0) + 1;
     setComissoes((p) => [
       ...p,
-      { tipo: "Bancaria", parcela: nextParcela, valor: 0, mes_previsto: "", data_pagamento: null },
+      { tipo: "Bancaria", parcela: nextParcela, valor: 0, percentual: null, mes_previsto: today(), data_pagamento: null },
     ]);
   };
 
