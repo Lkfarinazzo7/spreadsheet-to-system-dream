@@ -461,12 +461,25 @@ export function PipelineForm({
                           <Input value={t.cpf} onChange={(e) => updateTitular(idx, { cpf: maskCnpjCpf(e.target.value, "PF") })} />
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-xs">Idade</Label>
-                          <Input type="number" value={t.idade} onChange={(e) => updateTitular(idx, { idade: e.target.value })} />
+                          <Label className="text-xs">
+                            Data de nascimento
+                            {t.data_nascimento && getAge(t.data_nascimento) != null && (
+                              <span className="ml-1 text-muted-foreground">· {getAge(t.data_nascimento)} anos</span>
+                            )}
+                          </Label>
+                          <DatePicker
+                            value={t.data_nascimento ?? null}
+                            onChange={(iso) => updateTitular(idx, { data_nascimento: iso })}
+                          />
                         </div>
                         <div className="space-y-1">
                           <Label className="text-xs">Telefone</Label>
-                          <Input value={t.telefone} onChange={(e) => updateTitular(idx, { telefone: e.target.value })} />
+                          <Input
+                            inputMode="tel"
+                            placeholder="(11) 91234-5678"
+                            value={t.telefone}
+                            onChange={(e) => updateTitular(idx, { telefone: maskPhone(e.target.value) })}
+                          />
                         </div>
                         <div className="space-y-1">
                           <Label className="text-xs">E-mail</Label>
@@ -474,7 +487,20 @@ export function PipelineForm({
                         </div>
                         <div className="space-y-1">
                           <Label className="text-xs">Plano anterior</Label>
-                          <Input value={t.plano_anterior} onChange={(e) => updateTitular(idx, { plano_anterior: e.target.value })} />
+                          <Select
+                            value={t.plano_anterior || NENHUM_PLANO}
+                            onValueChange={(v) =>
+                              updateTitular(idx, { plano_anterior: v === NENHUM_PLANO ? "" : v })
+                            }
+                          >
+                            <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={NENHUM_PLANO}>Nenhum / Não possui</SelectItem>
+                              {operadoras.map((o) => (
+                                <SelectItem key={o.id} value={o.nome}>{o.nome}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </div>
                         <div className="space-y-1 col-span-2 md:col-span-3">
                           <Label className="text-xs">Endereço</Label>
@@ -502,7 +528,17 @@ export function PipelineForm({
                               <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
                                 <div className="space-y-1">
                                   <Label className="text-xs">Parentesco</Label>
-                                  <Input value={d.parentesco} onChange={(e) => updateDependente(idx, dIdx, { parentesco: e.target.value })} />
+                                  <Select
+                                    value={d.parentesco || ""}
+                                    onValueChange={(v) => updateDependente(idx, dIdx, { parentesco: v })}
+                                  >
+                                    <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                                    <SelectContent>
+                                      {PARENTESCOS.map((p) => (
+                                        <SelectItem key={p} value={p}>{p}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
                                 </div>
                                 <div className="space-y-1">
                                   <Label className="text-xs">Nome</Label>
@@ -513,12 +549,33 @@ export function PipelineForm({
                                   <Input value={d.cpf} onChange={(e) => updateDependente(idx, dIdx, { cpf: maskCnpjCpf(e.target.value, "PF") })} />
                                 </div>
                                 <div className="space-y-1">
-                                  <Label className="text-xs">Idade</Label>
-                                  <Input type="number" value={d.idade} onChange={(e) => updateDependente(idx, dIdx, { idade: e.target.value })} />
+                                  <Label className="text-xs">
+                                    Nascimento
+                                    {d.data_nascimento && getAge(d.data_nascimento) != null && (
+                                      <span className="ml-1 text-muted-foreground">· {getAge(d.data_nascimento)}a</span>
+                                    )}
+                                  </Label>
+                                  <DatePicker
+                                    value={d.data_nascimento ?? null}
+                                    onChange={(iso) => updateDependente(idx, dIdx, { data_nascimento: iso })}
+                                  />
                                 </div>
                                 <div className="space-y-1">
                                   <Label className="text-xs">Plano anterior</Label>
-                                  <Input value={d.plano_anterior} onChange={(e) => updateDependente(idx, dIdx, { plano_anterior: e.target.value })} />
+                                  <Select
+                                    value={d.plano_anterior || NENHUM_PLANO}
+                                    onValueChange={(v) =>
+                                      updateDependente(idx, dIdx, { plano_anterior: v === NENHUM_PLANO ? "" : v })
+                                    }
+                                  >
+                                    <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value={NENHUM_PLANO}>Nenhum</SelectItem>
+                                      {operadoras.map((o) => (
+                                        <SelectItem key={o.id} value={o.nome}>{o.nome}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
                                 </div>
                               </div>
                             </div>
