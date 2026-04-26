@@ -136,6 +136,7 @@ export default function Pipeline() {
       data_vigencia: item.data_vigencia ?? null,
       etapa: item.etapa,
       observacoes: item.observacoes ?? null,
+      dados_proposta: (item as any).dados_proposta ?? null,
     });
     setFormOpen(true);
   };
