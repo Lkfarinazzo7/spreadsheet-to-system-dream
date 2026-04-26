@@ -125,6 +125,19 @@ export function ContratoForm({
     }
   }, [form.data_vigencia]);
 
+  // Recalculate `valor` for lines that have a percentual whenever valor_mensal changes
+  useEffect(() => {
+    const mensal = Number(form.valor_mensal) || 0;
+    setComissoes((prev) =>
+      prev.map((c) =>
+        c.percentual != null && !Number.isNaN(c.percentual)
+          ? { ...c, valor: Number(((mensal * c.percentual) / 100).toFixed(2)) }
+          : c,
+      ),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.valor_mensal]);
+
   // Proporção calculada
   const proporcao = useMemo(() => {
     const total = comissoes.reduce((s, c) => s + (Number(c.valor) || 0), 0);
