@@ -8,12 +8,11 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { Plus, Check, Trash2, TrendingUp } from "lucide-react";
+import { Plus, Check, Trash2 } from "lucide-react";
 
 type Comissao = {
   id: string;
@@ -26,13 +25,11 @@ type Comissao = {
   pago: boolean;
   contrato?: { cliente: string; valor_mensal: number; proporcao_comissao: number } | null;
 };
-type Contrato = { id: string; cliente: string; valor_mensal: number; proporcao_comissao: number };
-
 export default function Comissoes() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [rows, setRows] = useState<Comissao[]>([]);
-  const [contratos, setContratos] = useState<Contrato[]>([]);
+  const [contratos, setContratos] = useState<{ id: string; cliente: string }[]>([]);
   const [open, setOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [form, setForm] = useState<Partial<Comissao>>({ parcela: 1, tipo: "Bancaria", valor: 0, pago: false });
@@ -43,7 +40,7 @@ export default function Comissoes() {
         .from("comissoes")
         .select("*, contrato:contratos(cliente,valor_mensal,proporcao_comissao)")
         .order("mes_previsto", { ascending: false }),
-      supabase.from("contratos").select("id,cliente,valor_mensal,proporcao_comissao").order("cliente"),
+      supabase.from("contratos").select("id,cliente").order("cliente"),
     ]);
     setRows((c.data as any) ?? []);
     setContratos((k.data as any) ?? []);
@@ -97,29 +94,11 @@ export default function Comissoes() {
     load();
   };
 
-  // Previsto vs recebido por contrato
-  const consolidado = useMemo(() => {
-    const map = new Map<string, { contrato_id: string; cliente: string; previsto: number; recebido: number }>();
-    contratos.forEach((c) => {
-      map.set(c.id, {
-        contrato_id: c.id,
-        cliente: c.cliente,
-        previsto: Number(c.valor_mensal) * Number(c.proporcao_comissao),
-        recebido: 0,
-      });
-    });
-    rows.forEach((r) => {
-      const it = map.get(r.contrato_id);
-      if (it && r.pago) it.recebido += Number(r.valor);
-    });
-    return Array.from(map.values()).filter((v) => v.previsto > 0 || v.recebido > 0);
-  }, [rows, contratos]);
-
   return (
     <div>
       <PageHeader
         title="Comissões"
-        description="Parcelas a receber e comparativo previsto × recebido"
+        description="Parcelas previstas e recebidas"
         actions={
           <Button onClick={() => setOpen(true)}>
             <Plus className="h-4 w-4" /> Nova parcela
@@ -127,14 +106,7 @@ export default function Comissoes() {
         }
       />
 
-      <Tabs defaultValue="parcelas">
-        <TabsList>
-          <TabsTrigger value="parcelas">Parcelas</TabsTrigger>
-          <TabsTrigger value="consolidado">Previsto × Recebido</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="parcelas">
-          <Card className="mb-4">
+      <Card className="mb-4">
             <CardContent className="p-3">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
@@ -147,7 +119,7 @@ export default function Comissoes() {
             </CardContent>
           </Card>
 
-          <Card>
+      <Card>
             <CardContent className="p-0">
               <Table>
                 <TableHeader>
@@ -197,48 +169,6 @@ export default function Comissoes() {
               </Table>
             </CardContent>
           </Card>
-        </TabsContent>
-
-        <TabsContent value="consolidado">
-          <Card>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Contrato</TableHead>
-                    <TableHead className="text-right">Previsto</TableHead>
-                    <TableHead className="text-right">Recebido</TableHead>
-                    <TableHead className="text-right">% Atingido</TableHead>
-                    <TableHead></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {consolidado.map((c) => {
-                    const pct = c.previsto > 0 ? (c.recebido / c.previsto) * 100 : 0;
-                    return (
-                      <TableRow key={c.contrato_id}>
-                        <TableCell className="font-medium">{c.cliente}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatCurrency(c.previsto)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatCurrency(c.recebido)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{pct.toFixed(0)}%</TableCell>
-                        <TableCell>
-                          {pct >= 100 ? (
-                            <Badge className="bg-success text-success-foreground hover:bg-success"><TrendingUp className="h-3 w-3 mr-1" />OK</Badge>
-                          ) : pct >= 50 ? (
-                            <Badge className="bg-warning text-warning-foreground hover:bg-warning">Parcial</Badge>
-                          ) : (
-                            <Badge variant="destructive">Atrasado</Badge>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
