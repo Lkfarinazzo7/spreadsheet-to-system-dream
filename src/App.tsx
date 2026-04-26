@@ -13,10 +13,8 @@ import Contratos from "./pages/app/Contratos";
 import Pipeline from "./pages/app/Pipeline";
 import Comissoes from "./pages/app/Comissoes";
 import Despesas from "./pages/app/Despesas";
-import Alertas from "./pages/app/Alertas";
 import Cadastros from "./pages/app/Cadastros";
 import Relatorios from "./pages/app/Relatorios";
-import Importar from "./pages/app/Importar";
 
 const queryClient = new QueryClient();
 
@@ -36,9 +34,7 @@ const App = () => (
               <Route path="pipeline" element={<Pipeline />} />
               <Route path="comissoes" element={<Comissoes />} />
               <Route path="despesas" element={<Despesas />} />
-              <Route path="alertas" element={<Alertas />} />
               <Route path="relatorios" element={<Relatorios />} />
-              <Route path="importar" element={<Importar />} />
               <Route path="cadastros" element={<Cadastros />} />
             </Route>
             <Route path="*" element={<NotFound />} />

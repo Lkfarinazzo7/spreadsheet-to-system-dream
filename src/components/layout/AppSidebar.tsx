@@ -1,4 +1,4 @@
-import { LayoutDashboard, FileText, Wallet, Receipt, Bell, BarChart3, Upload, Settings, LogOut, KanbanSquare } from "lucide-react";
+import { LayoutDashboard, FileText, Wallet, Receipt, BarChart3, Settings, LogOut, KanbanSquare } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -22,11 +22,9 @@ const main = [
   { title: "Pipeline", url: "/app/pipeline", icon: KanbanSquare },
   { title: "Comissões", url: "/app/comissoes", icon: Wallet },
   { title: "Despesas", url: "/app/despesas", icon: Receipt },
-  { title: "Alertas", url: "/app/alertas", icon: Bell },
 ];
 const tools = [
   { title: "Relatórios", url: "/app/relatorios", icon: BarChart3 },
-  { title: "Importar planilhas", url: "/app/importar", icon: Upload },
   { title: "Cadastros", url: "/app/cadastros", icon: Settings },
 ];
 
