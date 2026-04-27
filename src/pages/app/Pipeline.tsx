@@ -42,11 +42,20 @@ export default function Pipeline() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const load = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("pipeline_contratos")
       .select("*, operadora:operadoras(nome), canal:canais_venda(nome)")
       .neq("etapa", "Implantado")
       .order("posicao");
+    if (error) {
+      console.error("[Pipeline] load error:", error);
+      toast({
+        title: "Erro ao carregar pipeline",
+        description: error.message,
+        variant: "destructive",
+      });
+      return;
+    }
     setItems((data as any) ?? []);
   };
 
