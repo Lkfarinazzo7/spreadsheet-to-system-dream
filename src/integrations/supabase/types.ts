@@ -309,7 +309,22 @@ export type Database = {
           user_id?: string
           valor_mensal?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "pipeline_contratos_canal_id_fkey"
+            columns: ["canal_id"]
+            isOneToOne: false
+            referencedRelation: "canais_venda"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pipeline_contratos_operadora_id_fkey"
+            columns: ["operadora_id"]
+            isOneToOne: false
+            referencedRelation: "operadoras"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
