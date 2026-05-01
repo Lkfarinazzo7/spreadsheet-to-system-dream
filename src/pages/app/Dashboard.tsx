@@ -8,7 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { PageHeader } from "@/components/layout/PageHeader";
 import { formatCurrency } from "@/lib/format";
 import { Wallet, CircleDollarSign, TrendingUp, ChevronLeft, ChevronRight, CalendarRange } from "lucide-react";
-import { FileText, Hash } from "lucide-react";
+import { Hash } from "lucide-react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -110,15 +110,13 @@ export default function Dashboard() {
     const recebidas = inPeriod.filter((c) => c.pago);
     const aReceber = inPeriod.filter((c) => !c.pago).reduce((s, c) => s + Number(c.valor), 0);
     const receitaMes = recebidas.reduce((s, c) => s + Number(c.valor), 0);
-    const ticketReceita = recebidas.length ? receitaMes / recebidas.length : 0;
     const totalContratos = contratosPeriodo.reduce((s, c) => s + Number(c.valor_mensal || 0), 0);
-    const ticketContrato = contratosPeriodo.length ? totalContratos / contratosPeriodo.length : 0;
+    const ticketReceita = contratosPeriodo.length ? totalContratos / contratosPeriodo.length : 0;
     return {
       receitaMes,
       aReceber,
       ticketReceita,
       qtdContratos: contratosPeriodo.length,
-      ticketContrato,
     };
   }, [inPeriod, contratosPeriodo]);
 
@@ -180,7 +178,6 @@ export default function Dashboard() {
     { label: "Contratos do período", value: String(stats.qtdContratos), icon: Hash, accent: "text-primary" },
     { label: "Comissão a receber", value: formatCurrency(stats.aReceber), icon: Wallet, accent: "text-primary" },
     { label: "Ticket médio de receita", value: formatCurrency(stats.ticketReceita), icon: TrendingUp, accent: "text-success" },
-    { label: "Ticket médio de contrato", value: formatCurrency(stats.ticketContrato), icon: FileText, accent: "text-primary" },
   ];
 
   const monthLabel = `${MONTHS_PT[monthDate.getMonth()]} ${monthDate.getFullYear()}`;
@@ -244,7 +241,7 @@ export default function Dashboard() {
       </Card>
 
       {/* KPIs */}
-      <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-5 mb-6">
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-2 lg:grid-cols-4 mb-6">
         {kpis.map((k) => (
           <Card key={k.label} className="overflow-hidden">
             <CardContent className="p-4">

@@ -5,11 +5,12 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, Upload } from "lucide-react";
 import { PipelineColumn } from "@/components/pipeline/PipelineColumn";
 import { PipelineItem } from "@/components/pipeline/PipelineCard";
 import { PipelineForm, PipelineFormValues } from "@/components/pipeline/PipelineForm";
 import { ContratoForm, ContratoFormValues } from "@/components/contratos/ContratoForm";
+import { PipelineImportDialog } from "@/components/pipeline/PipelineImportDialog";
 
 const ETAPAS = [
   "Montagem de contrato",
@@ -20,6 +21,16 @@ const ETAPAS = [
   "Aguardando vigência",
   "Implantado",
 ] as const;
+
+const ETAPA_ACCENT: Record<string, string> = {
+  "Montagem de contrato": "bg-muted-foreground/40",
+  "Assinatura / Declaração de saúde": "bg-primary/70",
+  "Entrevista médica": "bg-primary",
+  "Em análise": "bg-warning/80",
+  "Pendências": "bg-destructive/70",
+  "Aguardando vigência": "bg-success/60",
+  "Implantado": "bg-success",
+};
 
 function addOneYear(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
@@ -33,6 +44,7 @@ export default function Pipeline() {
   const [items, setItems] = useState<PipelineItem[]>([]);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<PipelineFormValues | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   // Promote modal (open ContratoForm with prefilled data)
   const [promoteOpen, setPromoteOpen] = useState(false);
@@ -156,19 +168,25 @@ export default function Pipeline() {
         title="Pipeline"
         description="Propostas em andamento até a implantação"
         actions={
-          <Button onClick={() => { setEditing(null); setFormOpen(true); }}>
-            <Plus className="h-4 w-4" /> Nova proposta
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setImportOpen(true)}>
+              <Upload className="h-4 w-4" /> Importar planilha
+            </Button>
+            <Button onClick={() => { setEditing(null); setFormOpen(true); }}>
+              <Plus className="h-4 w-4" /> Nova proposta
+            </Button>
+          </div>
         }
       />
 
       <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-        <div className="flex gap-3 overflow-x-auto pb-4">
+        <div className="flex gap-4 overflow-x-auto pb-4">
           {ETAPAS.map((etapa) => (
             <PipelineColumn
               key={etapa}
               etapa={etapa}
               items={grouped[etapa]}
+              accentClass={ETAPA_ACCENT[etapa]}
               onEdit={handleEdit}
               onDelete={handleDelete}
             />
@@ -177,6 +195,8 @@ export default function Pipeline() {
       </DndContext>
 
       <PipelineForm open={formOpen} onOpenChange={setFormOpen} initial={editing} onSaved={load} />
+
+      <PipelineImportDialog open={importOpen} onOpenChange={setImportOpen} onImported={load} />
 
       <ContratoForm
         open={promoteOpen}
