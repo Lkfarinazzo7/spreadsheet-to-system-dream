@@ -1,3 +1,5 @@
+import type React from "react";
+
 // Deterministic tag color picker. Same name -> same palette across sessions.
 // Uses HSL tokens directly so it works in light/dark themes.
 
@@ -77,5 +79,3 @@ export function tagStyle(p: Palette): React.CSSProperties {
     borderColor: p.border,
   };
 }
-
-import type React from "react";
