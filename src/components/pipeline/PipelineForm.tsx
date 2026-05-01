@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { Loader2, AlertTriangle, Trash2 } from "lucide-react";
+import { Loader2, AlertTriangle, Trash2, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MoneyInput } from "@/components/ui/money-input";
 import { maskPhone, getAge } from "@/lib/format";
@@ -151,6 +151,9 @@ export function PipelineForm({
   const [busy, setBusy] = useState(false);
   const [operadoras, setOperadoras] = useState<Lookup[]>([]);
   const [form, setForm] = useState<PipelineFormValues>(initial ?? empty);
+  const [quickText, setQuickText] = useState("");
+  const [parsing, setParsing] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(true);
 
   useEffect(() => {
     setForm(
@@ -166,6 +169,8 @@ export function PipelineForm({
           }
         : empty,
     );
+    setQuickText("");
+    setQuickOpen(!initial?.id);
   }, [initial, open]);
 
   useEffect(() => {
@@ -193,6 +198,118 @@ export function PipelineForm({
 
   const setDP = (patch: Partial<DadosProposta>) =>
     setForm((p) => ({ ...p, dados_proposta: { ...(p.dados_proposta ?? {}), ...patch } }));
+
+  const runQuickFill = async () => {
+    const texto = quickText.trim();
+    if (!texto) {
+      toast({ title: "Cole alguma informação primeiro", variant: "destructive" });
+      return;
+    }
+    setParsing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("pipeline-parse", {
+        body: {
+          texto,
+          operadoras: operadoras.map((o) => ({ id: o.id, nome: o.nome })),
+        },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+
+      const ext = (data as any)?.extracted ?? {};
+      const matchedOperadoraId = (data as any)?.operadora_id ?? null;
+
+      let filled = 0;
+      setForm((prev) => {
+        const next: PipelineFormValues = { ...prev };
+        const setIfEmpty = <K extends keyof PipelineFormValues>(k: K, v: any) => {
+          if (v == null || v === "") return;
+          const cur = next[k];
+          if (cur == null || cur === "" || (typeof cur === "number" && cur === 0)) {
+            (next as any)[k] = v;
+            filled++;
+          }
+        };
+        setIfEmpty("cliente", ext.cliente);
+        setIfEmpty("numero_proposta", ext.numero_proposta);
+        if (ext.tipo && ["PF", "PJ", "Adesao"].includes(ext.tipo)) {
+          if (!prev.id) {
+            next.tipo = ext.tipo;
+            filled++;
+          }
+        }
+        if (matchedOperadoraId && !next.operadora_id) {
+          next.operadora_id = matchedOperadoraId;
+          filled++;
+        }
+        setIfEmpty("valor_mensal", typeof ext.valor_mensal === "number" ? ext.valor_mensal : undefined);
+        setIfEmpty("data_vigencia", ext.data_vigencia);
+        setIfEmpty("observacoes", ext.observacoes);
+
+        const curDP = next.dados_proposta ?? {};
+        const nextDP: DadosProposta = { ...curDP };
+        const setDpIfEmpty = (k: keyof DadosProposta, v: any) => {
+          if (v == null || v === "") return;
+          const cur = (nextDP as any)[k];
+          if (cur == null || cur === "" || (typeof cur === "number" && cur === 0)) {
+            (nextDP as any)[k] = v;
+            filled++;
+          }
+        };
+        setDpIfEmpty("cnpj_cpf", ext.cnpj_cpf);
+        setDpIfEmpty("categoria", ext.categoria);
+        setDpIfEmpty("acomodacao", ext.acomodacao);
+        setDpIfEmpty("coparticipacao", ext.coparticipacao);
+        setDpIfEmpty("vidas", ext.vidas);
+        setDpIfEmpty("qtd_titulares", ext.qtd_titulares);
+        setDpIfEmpty("qtd_dependentes", ext.qtd_dependentes);
+        setDpIfEmpty("data_reajuste", ext.data_reajuste);
+        setDpIfEmpty("endereco_empresa", ext.endereco_empresa);
+
+        // Titulares: só preenche se ainda vazio
+        if (Array.isArray(ext.titulares) && ext.titulares.length > 0 && (!nextDP.titulares || nextDP.titulares.length === 0)) {
+          nextDP.titulares = ext.titulares.map((t: any) => ({
+            nome: t.nome ?? "",
+            cpf: t.cpf ?? "",
+            data_nascimento: t.data_nascimento ?? null,
+            telefone: t.telefone ?? "",
+            email: t.email ?? "",
+            endereco: t.endereco ?? "",
+            plano_anterior: t.plano_anterior ?? "",
+            dependentes: Array.isArray(t.dependentes)
+              ? t.dependentes.map((d: any) => ({
+                  parentesco: d.parentesco ?? "",
+                  nome: d.nome ?? "",
+                  cpf: d.cpf ?? "",
+                  data_nascimento: d.data_nascimento ?? null,
+                  plano_anterior: d.plano_anterior ?? "",
+                }))
+              : [],
+          }));
+          if (!nextDP.qtd_titulares) nextDP.qtd_titulares = nextDP.titulares.length;
+          filled++;
+        }
+
+        next.dados_proposta = nextDP;
+        return next;
+      });
+
+      toast({
+        title: "Preenchimento concluído",
+        description: filled > 0 ? `${filled} campo(s) preenchido(s).` : "Nada novo identificado.",
+      });
+      setQuickOpen(false);
+    } catch (e: any) {
+      console.error("[pipeline-parse] erro:", e);
+      toast({
+        title: "Erro ao preencher",
+        description: e?.message ?? String(e),
+        variant: "destructive",
+      });
+    } finally {
+      setParsing(false);
+    }
+  };
 
   const dp = form.dados_proposta ?? {};
   const titulares = dp.titulares ?? [];
@@ -297,6 +414,46 @@ export function PipelineForm({
         </DialogHeader>
 
         <form onSubmit={submit} className="space-y-4">
+          {/* PREENCHIMENTO RÁPIDO COM IA */}
+          <div className="rounded-lg border border-primary/30 bg-primary/5 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setQuickOpen((v) => !v)}
+              className="w-full flex items-center justify-between px-3 py-2 text-sm font-semibold text-primary hover:bg-primary/10 transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4" />
+                Preenchimento rápido com IA
+              </span>
+              {quickOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </button>
+            {quickOpen && (
+              <div className="px-3 pb-3 space-y-2">
+                <Textarea
+                  rows={4}
+                  placeholder="Cole aqui qualquer texto solto sobre a proposta (mensagem do cliente, e-mail, anotações). A IA vai identificar cliente, CPF/CNPJ, operadora, valor, vidas, datas, titulares, dependentes etc."
+                  value={quickText}
+                  onChange={(e) => setQuickText(e.target.value)}
+                  className="bg-background"
+                />
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    onClick={runQuickFill}
+                    disabled={parsing || !quickText.trim()}
+                    size="sm"
+                  >
+                    {parsing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                    {parsing ? "Analisando..." : "Preencher automaticamente"}
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Campos já preenchidos não são sobrescritos.
+                </p>
+              </div>
+            )}
+          </div>
+
           {/* SEÇÃO A — DADOS DO CONTRATO */}
           <div>
             <h3 className="font-semibold text-sm mb-2">Dados do contrato</h3>
