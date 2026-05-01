@@ -1,108 +1,75 @@
+## Objetivo
 
-## Visão geral
-
-Três frentes:
-
-1. **Pipeline — Importar planilha** de propostas em andamento (CSV/XLSX).
-2. **Pipeline — Redesign visual** moderno (sem emojis), com **total de contratos** e **soma de valor** no topo de cada etapa.
-3. **Dashboard — Ticket médio de receita** passa a usar **valor do contrato (`valor_mensal`)**, não parcelas de comissão.
+Deixar a Pipeline mais bonita e produtiva com 3 melhorias:
+1. **Tags coloridas** para canal e operadora (cor estável por nome).
+2. **Clique no card** abre edição direto (sem precisar do botão de lápis).
+3. **Campo de texto livre** que preenche o formulário automaticamente a partir de informações soltas (ex: colar um WhatsApp/email).
 
 ---
 
-## 1. Importar planilha no Pipeline
+## 1. Tags coloridas para operadora e canal
 
-### UX
-- Novo botão **"Importar planilha"** no `PageHeader` da página Pipeline, ao lado de "Nova proposta".
-- Abre um Dialog com:
-  - Botão **"Baixar modelo (.xlsx)"** — gera localmente um arquivo modelo com cabeçalhos esperados e 1 linha de exemplo.
-  - Input de upload aceitando `.xlsx`, `.xls`, `.csv`.
-  - **Pré-visualização** das primeiras 10 linhas mapeadas, contagem de válidas/inválidas e lista de erros por linha (linha N: motivo).
-  - Seletor de **etapa padrão** (default: "Montagem de contrato") aplicada a linhas sem etapa válida.
-  - Botão **"Importar N propostas"** (desabilitado se não houver linhas válidas).
+Criar `src/lib/tagColor.ts` com uma função `getTagColor(nome)` que:
+- Faz hash determinístico do nome (mesmo nome → mesma cor sempre).
+- Retorna uma das ~10 paletas pré-definidas (azul, verde, âmbar, roxo, rosa, ciano, etc.) usando tokens HSL do design system com baixa opacidade no fundo e cor sólida no texto/borda — segue o tema claro do app.
+- Operadoras conhecidas (Amil, Bradesco, SulAmérica, Porto, Assim, MedSenior) recebem uma cor "oficial" mapeada à marca; demais caem no hash.
 
-### Colunas do modelo
-Obrigatórias: `cliente`, `valor_mensal`.
-Opcionais: `numero_proposta`, `tipo` (PF/PJ/Adesao — default PF), `operadora` (nome — match case-insensitive na tabela `operadoras` do usuário), `canal` (nome — `canais_venda`), `etapa` (nome exato de uma das 7 etapas), `data_vigencia` (dd/mm/aaaa ou ISO), `cnpj_cpf`, `vidas`, `categoria`, `acomodacao`, `coparticipacao`, `endereco`, `observacoes`.
+No `PipelineCard.tsx`:
+- Substituir as linhas de operadora/canal (com ícone + texto cinza) por **chips/badges coloridas** lado a lado, no topo do card, abaixo do nome do cliente.
+- Manter o badge de tipo (PF/PJ/Adesão) também colorido por tipo (cores fixas).
+- Data de vigência e nº de vidas continuam como ícones discretos no rodapé.
 
-### Regras de parsing
-- Valor: aceita `1.234,56`, `R$ 1.234,56`, `1234.56` → usa `parseBRL`.
-- Datas: aceita `dd/mm/aaaa`, `aaaa-mm-dd`, e número serial do Excel.
-- Operadora/canal: lookup pelo nome; se não existir, fica `null` (e mostra aviso, não bloqueia).
-- Tipo inválido → default `PF`. Etapa inválida → fallback para etapa padrão escolhida.
-- Linha inválida apenas se `cliente` vazio ou `valor_mensal` não numérico.
+## 2. Clique no card abre edição
 
-### Inserção
-- Bulk `insert` em `pipeline_contratos` com `user_id`, `posicao = Date.now() + index`, `dados_proposta = { cnpj_cpf, vidas, categoria, acomodacao, coparticipacao, endereco_empresa: endereco }`.
-- Ao final: toast "N propostas importadas", fecha dialog e recarrega Kanban.
+No `PipelineCard.tsx`:
+- Adicionar `onClick` no `Card` que chama `onEdit()`.
+- Diferenciar **clique** de **drag**: o `useDraggable` já tem `activationConstraint: { distance: 5 }` no `Pipeline.tsx`, então arrastar não dispara click. Garantir que o handler só dispara em click puro.
+- Remover o botão de lápis (Pencil). Manter apenas o botão de excluir, visível no hover, com `stopPropagation` para não abrir o modal.
+- Adicionar leve `hover:bg-accent/30` + cursor pointer para indicar interatividade.
 
-### Implementação técnica
-- Adicionar dep `xlsx` (SheetJS) via `bun add xlsx` para ler/gerar planilhas.
-- Novo arquivo: `src/components/pipeline/PipelineImportDialog.tsx`.
-- Lógica de parsing/normalização em `src/lib/pipelineImport.ts` (testável, isolada).
+## 3. Preenchimento inteligente por texto livre
 
----
+Adicionar no topo do `PipelineForm.tsx` (visível só ao criar nova proposta, recolhível ao editar) um bloco **"Preenchimento rápido"**:
+- `Textarea` grande com placeholder de exemplo ("Cole aqui informações do cliente, da proposta, etc.").
+- Botão **"Preencher automaticamente"** que envia o texto a uma edge function de IA.
 
-## 2. Redesign visual da Pipeline (Kanban moderno)
+### Edge function `pipeline-parse` (nova)
+- Usa **Lovable AI Gateway** (`LOVABLE_API_KEY` já existe nos secrets) com modelo `google/gemini-2.5-flash` (rápido e barato, suficiente para extração).
+- Recebe `{ texto, operadoras: [{id, nome}] }` e retorna JSON estruturado:
+  ```
+  { cliente, numero_proposta, tipo, cnpj_cpf, operadora_id,
+    valor_mensal, data_vigencia, vidas, qtd_titulares,
+    qtd_dependentes, acomodacao, coparticipacao, categoria,
+    endereco_empresa, observacoes,
+    titulares: [{ nome, cpf, data_nascimento, telefone, email,
+                  endereco, plano_anterior, dependentes:[...] }] }
+  ```
+- Usa **structured outputs** (JSON schema) para forçar o formato.
+- Mapeia nome de operadora detectado → `operadora_id` da lista enviada (case-insensitive, fuzzy simples).
+- Configurada com `verify_jwt = true` em `supabase/config.toml` (default — usuário precisa estar logado).
 
-### Direção de design
-- **Sem emojis**. Substituir por ícones do `lucide-react` em tom muted (`Building2`, `Megaphone`, `CalendarDays`, `Users`, `Hash`).
-- **Colunas**: largura `w-80`, fundo `bg-muted/40` com borda sutil `border border-border/50`, cabeçalho sticky no topo com:
-  - Nome da etapa em `text-sm font-semibold`.
-  - **Pill com contagem** (`{n} contratos`) e **soma do valor** (`formatCurrency`) abaixo, em `text-xs text-muted-foreground tabular-nums`.
-  - Faixa colorida fina (2px) no topo da coluna, cor por etapa (paleta semântica do tailwind config — primary, warning, success, etc.) para criar hierarquia visual.
-- **Cards**:
-  - `rounded-xl`, sombra leve `shadow-sm` → `shadow-md` no hover, transição suave.
-  - Linha 1: nome do cliente em `font-semibold text-sm` + badge `tipo` discreto à direita.
-  - Linha 2: `#proposta` em mono `text-xs text-muted-foreground`.
-  - Bloco metadados em grid 2 colunas com ícones lucide alinhados (16px), substituindo os emojis atuais (`🏥`, `📍`, `📅`, `👥`).
-  - Rodapé: valor em destaque (`text-base font-semibold tabular-nums`) à esquerda; ações (editar/excluir) só aparecem no hover do card (`opacity-0 group-hover:opacity-100`).
-  - Estado dragging: `ring-2 ring-primary/40 shadow-lg rotate-1`.
-- **Coluna vazia**: ilustração simples com ícone `Inbox` + texto "Arraste propostas aqui".
-- Container do Kanban com `gap-4` e padding lateral mais respirado.
-
-### Cabeçalho com totais
-Cada `PipelineColumn` calcula `count` e `sum = items.reduce((s,i)=>s+Number(i.valor_mensal||0),0)` e exibe ambos no header. Já recebe `items` — sem mudança de props.
-
-### Arquivos afetados
-- `src/components/pipeline/PipelineColumn.tsx` — novo header, faixa colorida, totais, estilos.
-- `src/components/pipeline/PipelineCard.tsx` — ícones lucide no lugar de emojis, novos estilos, ações com hover.
-- `src/pages/app/Pipeline.tsx` — passar cor por etapa via mapa local; ajustar gap/padding do container.
+### No formulário
+- Após resposta, faz merge do JSON no estado atual (campos vazios são preenchidos; campos já preenchidos pelo usuário **não** são sobrescritos sem confirmação — mostrar toast "12 campos preenchidos").
+- Loading state no botão durante a chamada.
+- Tratamento de erro com toast.
 
 ---
 
-## 3. Dashboard — Ticket médio de receita por contrato
+## Detalhes técnicos
 
-### Mudança
-Atualmente: `ticketReceita = receitaMes / quantidade_de_parcelas_pagas`.
-**Novo**: ticket médio = **soma de `valor_mensal` dos contratos cuja `data_vigencia` está no período** ÷ **número de contratos no período** (mesma fórmula que hoje calcula "ticket médio de contrato"). Ou seja, consolidar:
+**Arquivos a criar:**
+- `src/lib/tagColor.ts` — paleta + função de cor por nome.
+- `supabase/functions/pipeline-parse/index.ts` — edge function de extração via Lovable AI.
 
-- Renomear KPI **"Ticket médio de receita"** → mantém label, mas calcula sobre `valor_mensal` dos contratos do período.
-- Manter **"Ticket médio de contrato"** como está (também `valor_mensal`)?
+**Arquivos a editar:**
+- `src/components/pipeline/PipelineCard.tsx` — chips coloridos, click-to-edit, remover botão editar.
+- `src/components/pipeline/PipelineForm.tsx` — bloco "Preenchimento rápido" no topo + lógica de merge.
+- `supabase/config.toml` — registrar a função (se necessário para configs específicas).
 
-> ⚠️ Como a fórmula nova ficaria igual ao "Ticket médio de contrato", proponho:
-> **remover o KPI "Ticket médio de contrato"** e deixar apenas **"Ticket médio de receita"** = valor_mensal médio dos contratos do período. Resultado: 4 KPIs (mais limpo).
->
-> Se preferir manter os dois separados, me avise — posso definir "ticket de receita" como receita anualizada (`valor_mensal × 12`) por contrato, por exemplo.
+**Sem mudanças no schema do banco.**
 
-### Implementação
-- Em `src/pages/app/Dashboard.tsx`, em `stats`:
-  - `ticketReceita = contratosPeriodo.length ? totalContratos / contratosPeriodo.length : 0`.
-  - Remover `ticketContrato` e o KPI correspondente do array `kpis`.
-- Grid de KPIs passa de `lg:grid-cols-5` para `lg:grid-cols-4`.
-
----
-
-## Arquivos
-
-**Criados**
-- `src/components/pipeline/PipelineImportDialog.tsx`
-- `src/lib/pipelineImport.ts`
-
-**Editados**
-- `src/pages/app/Pipeline.tsx` (botão importar, ajustes visuais container)
-- `src/components/pipeline/PipelineColumn.tsx` (redesign + totais)
-- `src/components/pipeline/PipelineCard.tsx` (redesign, ícones)
-- `src/pages/app/Dashboard.tsx` (ticket médio)
-- `package.json` (dep `xlsx`)
-
-**Sem alterações de banco** — schema já comporta tudo.
+## Decisões assumidas
+- Cor por nome via hash → consistente entre sessões sem precisar persistir nada.
+- IA usa `google/gemini-2.5-flash` (sem custo de API key, via Lovable AI).
+- Texto livre aceita qualquer formato (lista, parágrafo, mensagem colada). A IA decide.
+- Merge não destrutivo (não sobrescreve o que o usuário já digitou).
