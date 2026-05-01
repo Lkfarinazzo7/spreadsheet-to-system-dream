@@ -1,9 +1,9 @@
 import { useDraggable } from "@dnd-kit/core";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { Pencil, Trash2, Building2, Megaphone, CalendarDays, Users } from "lucide-react";
+import { Trash2, CalendarDays, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { getTagColor, getTipoColor, tagStyle } from "@/lib/tagColor";
 
 export type PipelineItem = {
   id: string;
@@ -37,12 +37,23 @@ export function PipelineCard({
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 50 }
     : undefined;
 
+  const tipoPalette = getTipoColor(item.tipo);
+  const operadoraPalette = getTagColor(item.operadora?.nome);
+  const canalPalette = getTagColor(item.canal?.nome);
+
+  const handleClick = (e: React.MouseEvent) => {
+    // dnd-kit only triggers drag after distance threshold; a clean click reaches here.
+    if (isDragging) return;
+    onEdit();
+  };
+
   return (
     <Card
       ref={setNodeRef}
       style={style}
-      className={`group p-3 mb-2 rounded-xl cursor-grab active:cursor-grabbing select-none border-border/60 shadow-sm hover:shadow-md hover:border-border transition-all ${
-        isDragging ? "ring-2 ring-primary/40 shadow-lg rotate-1" : ""
+      onClick={handleClick}
+      className={`group p-3 mb-2 rounded-xl cursor-pointer active:cursor-grabbing select-none border-border/60 shadow-sm hover:shadow-md hover:border-primary/40 hover:-translate-y-0.5 transition-all ${
+        isDragging ? "ring-2 ring-primary/40 shadow-lg rotate-1 cursor-grabbing" : ""
       }`}
       {...attributes}
       {...listeners}
@@ -54,23 +65,39 @@ export function PipelineCard({
             <div className="text-[11px] text-muted-foreground font-mono mt-0.5">#{item.numero_proposta}</div>
           )}
         </div>
-        <Badge variant="secondary" className="shrink-0 text-[10px] font-medium">{item.tipo}</Badge>
+        <span
+          className="shrink-0 inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold tracking-wide"
+          style={tagStyle(tipoPalette)}
+        >
+          {item.tipo}
+        </span>
       </div>
 
-      <div className="mt-2.5 grid grid-cols-1 gap-1 text-xs text-muted-foreground">
-        {item.operadora?.nome && (
-          <div className="flex items-center gap-1.5 truncate">
-            <Building2 className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">{item.operadora.nome}</span>
-          </div>
-        )}
-        {item.canal?.nome && (
-          <div className="flex items-center gap-1.5 truncate">
-            <Megaphone className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">{item.canal.nome}</span>
-          </div>
-        )}
-        <div className="flex items-center gap-3">
+      {(item.operadora?.nome || item.canal?.nome) && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {item.operadora?.nome && (
+            <span
+              className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10.5px] font-semibold max-w-[160px] truncate"
+              style={tagStyle(operadoraPalette)}
+              title={item.operadora.nome}
+            >
+              {item.operadora.nome}
+            </span>
+          )}
+          {item.canal?.nome && (
+            <span
+              className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10.5px] font-semibold max-w-[160px] truncate"
+              style={tagStyle(canalPalette)}
+              title={item.canal.nome}
+            >
+              {item.canal.nome}
+            </span>
+          )}
+        </div>
+      )}
+
+      {(item.data_vigencia || (item.dados_proposta?.vidas != null && item.dados_proposta.vidas > 0)) && (
+        <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
           {item.data_vigencia && (
             <div className="flex items-center gap-1.5">
               <CalendarDays className="h-3.5 w-3.5" />
@@ -84,19 +111,17 @@ export function PipelineCard({
             </div>
           )}
         </div>
-      </div>
+      )}
 
       <div className="mt-3 pt-2 border-t border-border/50 flex items-center justify-between">
         <span className="text-base font-semibold tabular-nums">
           {formatCurrency(item.valor_mensal)}
         </span>
         <div
-          className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+          className="opacity-0 group-hover:opacity-100 transition-opacity"
           onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
         >
-          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onEdit}>
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
           <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onDelete}>
             <Trash2 className="h-3.5 w-3.5 text-destructive" />
           </Button>
