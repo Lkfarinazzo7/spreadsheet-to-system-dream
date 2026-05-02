@@ -562,6 +562,10 @@ export function PipelineForm({
                 <Label>Mês implantação/reajuste</Label>
                 <DatePicker value={dp.data_reajuste ?? null} onChange={(iso) => setDP({ data_reajuste: iso })} />
               </div>
+              <div className="space-y-1.5">
+                <Label>Próxima revisão</Label>
+                <DatePicker value={form.data_revisao ?? null} onChange={(iso) => set("data_revisao", iso)} />
+              </div>
 
               <div className="space-y-1.5 col-span-2 md:col-span-3">
                 <Label>Endereço da empresa</Label>
