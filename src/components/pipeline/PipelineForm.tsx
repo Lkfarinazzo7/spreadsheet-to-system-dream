@@ -758,6 +758,13 @@ export function PipelineForm({
             <Textarea rows={2} value={form.observacoes ?? ""} onChange={(e) => set("observacoes", e.target.value)} />
           </div>
 
+          {form.id && (
+            <div className="space-y-2">
+              <Separator />
+              <PipelineAnexos pipelineId={form.id} />
+            </div>
+          )}
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
             <Button type="submit" disabled={busy}>
