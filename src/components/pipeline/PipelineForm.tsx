@@ -15,6 +15,7 @@ import { Loader2, AlertTriangle, Trash2, Sparkles, ChevronDown, ChevronUp } from
 import { DatePicker } from "@/components/ui/date-picker";
 import { MoneyInput } from "@/components/ui/money-input";
 import { maskPhone, getAge } from "@/lib/format";
+import { PipelineAnexos } from "./PipelineAnexos";
 
 type Lookup = { id: string; nome: string };
 
@@ -61,6 +62,7 @@ export type PipelineFormValues = {
   canal_id?: string | null;
   valor_mensal: number;
   data_vigencia?: string | null;
+  data_revisao?: string | null;
   etapa: string;
   observacoes?: string | null;
   dados_proposta?: DadosProposta | null;
@@ -384,6 +386,7 @@ export function PipelineForm({
         posicao: Date.now(),
         dados_proposta: form.dados_proposta as any,
       };
+      (payload as any).data_revisao = form.data_revisao || null;
 
       const { error } = form.id
         ? await supabase.from("pipeline_contratos").update(payload).eq("id", form.id)
@@ -559,6 +562,10 @@ export function PipelineForm({
               <div className="space-y-1.5">
                 <Label>Mês implantação/reajuste</Label>
                 <DatePicker value={dp.data_reajuste ?? null} onChange={(iso) => setDP({ data_reajuste: iso })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Próxima revisão</Label>
+                <DatePicker value={form.data_revisao ?? null} onChange={(iso) => set("data_revisao", iso)} />
               </div>
 
               <div className="space-y-1.5 col-span-2 md:col-span-3">
@@ -750,6 +757,13 @@ export function PipelineForm({
             <Label>Observações</Label>
             <Textarea rows={2} value={form.observacoes ?? ""} onChange={(e) => set("observacoes", e.target.value)} />
           </div>
+
+          {form.id && (
+            <div className="space-y-2">
+              <Separator />
+              <PipelineAnexos pipelineId={form.id} />
+            </div>
+          )}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
