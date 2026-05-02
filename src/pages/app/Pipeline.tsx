@@ -5,12 +5,15 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
-import { Plus, Upload } from "lucide-react";
+import { Plus, Upload, Wallet, Layers, CalendarClock } from "lucide-react";
 import { PipelineColumn } from "@/components/pipeline/PipelineColumn";
 import { PipelineItem } from "@/components/pipeline/PipelineCard";
 import { PipelineForm, PipelineFormValues } from "@/components/pipeline/PipelineForm";
 import { ContratoForm, ContratoFormValues } from "@/components/contratos/ContratoForm";
 import { PipelineImportDialog } from "@/components/pipeline/PipelineImportDialog";
+import { formatCurrency } from "@/lib/format";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 const ETAPAS = [
   "Montagem de contrato",
@@ -45,6 +48,7 @@ export default function Pipeline() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<PipelineFormValues | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [onlyRevisar, setOnlyRevisar] = useState(false);
 
   // Promote modal (open ContratoForm with prefilled data)
   const [promoteOpen, setPromoteOpen] = useState(false);
@@ -79,11 +83,22 @@ export default function Pipeline() {
   const grouped = useMemo(() => {
     const map: Record<string, PipelineItem[]> = {};
     for (const e of ETAPAS) map[e] = [];
-    for (const it of items) {
+    const today = new Date().toISOString().slice(0, 10);
+    const filtered = onlyRevisar
+      ? items.filter((i) => i.data_revisao && i.data_revisao <= today)
+      : items;
+    for (const it of filtered) {
       if (map[it.etapa]) map[it.etapa].push(it);
     }
     return map;
-  }, [items]);
+  }, [items, onlyRevisar]);
+
+  const totalGeral = useMemo(() => items.reduce((s, i) => s + Number(i.valor_mensal || 0), 0), [items]);
+  const today = new Date().toISOString().slice(0, 10);
+  const revisarHoje = useMemo(
+    () => items.filter((i) => i.data_revisao && i.data_revisao <= today).length,
+    [items, today],
+  );
 
   const handlePromote = (item: PipelineItem) => {
     setPromoting(item);
@@ -155,6 +170,7 @@ export default function Pipeline() {
       canal_id: (item as any).canal_id ?? null,
       valor_mensal: Number(item.valor_mensal) || 0,
       data_vigencia: item.data_vigencia ?? null,
+      data_revisao: item.data_revisao ?? null,
       etapa: item.etapa,
       observacoes: item.observacoes ?? null,
       dados_proposta: (item as any).dados_proposta ?? null,
@@ -178,6 +194,42 @@ export default function Pipeline() {
           </div>
         }
       />
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        <div className="rounded-xl border bg-card p-3 flex items-center gap-3">
+          <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+            <Wallet className="h-4 w-4" />
+          </div>
+          <div>
+            <div className="text-[11px] text-muted-foreground uppercase tracking-wide">Total em pipeline</div>
+            <div className="text-lg font-semibold tabular-nums">{formatCurrency(totalGeral)}</div>
+          </div>
+        </div>
+        <div className="rounded-xl border bg-card p-3 flex items-center gap-3">
+          <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+            <Layers className="h-4 w-4" />
+          </div>
+          <div>
+            <div className="text-[11px] text-muted-foreground uppercase tracking-wide">Propostas ativas</div>
+            <div className="text-lg font-semibold tabular-nums">{items.length}</div>
+          </div>
+        </div>
+        <div className="rounded-xl border bg-card p-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-lg bg-warning/15 text-warning flex items-center justify-center">
+              <CalendarClock className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="text-[11px] text-muted-foreground uppercase tracking-wide">Para revisar hoje</div>
+              <div className="text-lg font-semibold tabular-nums">{revisarHoje}</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch id="only-revisar" checked={onlyRevisar} onCheckedChange={setOnlyRevisar} />
+            <Label htmlFor="only-revisar" className="text-xs cursor-pointer">Filtrar</Label>
+          </div>
+        </div>
+      </div>
 
       <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
         <div className="flex gap-4 overflow-x-auto pb-4">
