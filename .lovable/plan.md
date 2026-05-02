@@ -1,75 +1,85 @@
 ## Objetivo
 
-Deixar a Pipeline mais bonita e produtiva com 3 melhorias:
-1. **Tags coloridas** para canal e operadora (cor estável por nome).
-2. **Clique no card** abre edição direto (sem precisar do botão de lápis).
-3. **Campo de texto livre** que preenche o formulário automaticamente a partir de informações soltas (ex: colar um WhatsApp/email).
+Quatro melhorias na Pipeline:
+1. **Total geral** no topo somando todas as etapas.
+2. **Anexos** (tipo "Drive") por proposta com upload de documentos.
+3. **Checklist de pendências** no rodapé do card mostrando o que falta preencher.
+4. **Data de próxima revisão** por proposta + filtro/destaque visual.
 
 ---
 
-## 1. Tags coloridas para operadora e canal
+## 1. Total geral no topo da Pipeline
 
-Criar `src/lib/tagColor.ts` com uma função `getTagColor(nome)` que:
-- Faz hash determinístico do nome (mesmo nome → mesma cor sempre).
-- Retorna uma das ~10 paletas pré-definidas (azul, verde, âmbar, roxo, rosa, ciano, etc.) usando tokens HSL do design system com baixa opacidade no fundo e cor sólida no texto/borda — segue o tema claro do app.
-- Operadoras conhecidas (Amil, Bradesco, SulAmérica, Porto, Assim, MedSenior) recebem uma cor "oficial" mapeada à marca; demais caem no hash.
+Em `src/pages/app/Pipeline.tsx`, dentro do `PageHeader` (ou logo abaixo):
+- Calcular `totalGeral = items.reduce((s,i) => s + Number(i.valor_mensal||0), 0)` e `totalCount = items.length`.
+- Mostrar uma faixa com cards pequenos: **"Total em pipeline"** (valor) e **"Propostas ativas"** (contagem).
 
-No `PipelineCard.tsx`:
-- Substituir as linhas de operadora/canal (com ícone + texto cinza) por **chips/badges coloridas** lado a lado, no topo do card, abaixo do nome do cliente.
-- Manter o badge de tipo (PF/PJ/Adesão) também colorido por tipo (cores fixas).
-- Data de vigência e nº de vidas continuam como ícones discretos no rodapé.
+## 2. Anexos por proposta ("Drive")
 
-## 2. Clique no card abre edição
+**Backend (migration):**
+- Criar bucket privado `pipeline-anexos` em `storage.buckets`.
+- RLS em `storage.objects` para o bucket: usuário só lê/escreve/deleta arquivos cujo `path` começa com `auth.uid()/`.
+- Convenção de path: `{user_id}/{pipeline_id}/{timestamp}-{nome_arquivo}`.
 
-No `PipelineCard.tsx`:
-- Adicionar `onClick` no `Card` que chama `onEdit()`.
-- Diferenciar **clique** de **drag**: o `useDraggable` já tem `activationConstraint: { distance: 5 }` no `Pipeline.tsx`, então arrastar não dispara click. Garantir que o handler só dispara em click puro.
-- Remover o botão de lápis (Pencil). Manter apenas o botão de excluir, visível no hover, com `stopPropagation` para não abrir o modal.
-- Adicionar leve `hover:bg-accent/30` + cursor pointer para indicar interatividade.
+**Componente novo `PipelineAnexos.tsx`:**
+- Lista arquivos do prefixo `{user_id}/{pipeline_id}/` via `supabase.storage.from('pipeline-anexos').list()`.
+- Botão **"Adicionar arquivos"** (multi-upload, drag-and-drop opcional).
+- Cada item: ícone por extensão (PDF/DOC/XLS/IMG), nome, tamanho, data, botões **baixar** (createSignedUrl 60s) e **excluir**.
+- Estado vazio amigável.
 
-## 3. Preenchimento inteligente por texto livre
+**Integração:**
+- No `PipelineForm.tsx`, adicionar uma seção **"Anexos"** (visível só ao editar — precisa do `id`).
+- No `PipelineCard.tsx`, mostrar um pequeno indicador `📎 N` quando houver anexos. Para evitar N requests, opcionalmente armazenar `anexos_count` denormalizado em `dados_proposta` (atualizado ao subir/remover) — primeira versão pode pular esse contador para simplicidade.
 
-Adicionar no topo do `PipelineForm.tsx` (visível só ao criar nova proposta, recolhível ao editar) um bloco **"Preenchimento rápido"**:
-- `Textarea` grande com placeholder de exemplo ("Cole aqui informações do cliente, da proposta, etc.").
-- Botão **"Preencher automaticamente"** que envia o texto a uma edge function de IA.
+## 3. Checklist de pendências no card
 
-### Edge function `pipeline-parse` (nova)
-- Usa **Lovable AI Gateway** (`LOVABLE_API_KEY` já existe nos secrets) com modelo `google/gemini-2.5-flash` (rápido e barato, suficiente para extração).
-- Recebe `{ texto, operadoras: [{id, nome}] }` e retorna JSON estruturado:
-  ```
-  { cliente, numero_proposta, tipo, cnpj_cpf, operadora_id,
-    valor_mensal, data_vigencia, vidas, qtd_titulares,
-    qtd_dependentes, acomodacao, coparticipacao, categoria,
-    endereco_empresa, observacoes,
-    titulares: [{ nome, cpf, data_nascimento, telefone, email,
-                  endereco, plano_anterior, dependentes:[...] }] }
-  ```
-- Usa **structured outputs** (JSON schema) para forçar o formato.
-- Mapeia nome de operadora detectado → `operadora_id` da lista enviada (case-insensitive, fuzzy simples).
-- Configurada com `verify_jwt = true` em `supabase/config.toml` (default — usuário precisa estar logado).
+Criar `src/lib/pipelinePendencias.ts` com função `getPendencias(item)` que retorna lista de strings dos campos importantes ainda vazios. Regras:
+- Sempre verifica: `numero_proposta`, `operadora_id`, `canal_id`, `valor_mensal>0`, `data_vigencia`, `dados_proposta.cnpj_cpf`, `dados_proposta.vidas`, `dados_proposta.acomodacao`, `dados_proposta.coparticipacao`.
+- Se PJ: também `endereco_empresa`.
+- Se houver `qtd_titulares > 0`: verificar que cada titular tem `nome` e `cpf` preenchidos; senão adiciona "Titular N incompleto".
 
-### No formulário
-- Após resposta, faz merge do JSON no estado atual (campos vazios são preenchidos; campos já preenchidos pelo usuário **não** são sobrescritos sem confirmação — mostrar toast "12 campos preenchidos").
-- Loading state no botão durante a chamada.
-- Tratamento de erro com toast.
+No `PipelineCard.tsx`, no rodapé (após o valor):
+- Se `pendencias.length === 0`: badge verde discreto **"Completo"** com `CheckCircle2`.
+- Caso contrário: bloquinho colapsado mostrando até 3 itens com `AlertCircle` âmbar + "+N mais" se exceder. Texto pequeno (text-[10.5px]), não interfere no drag.
+
+## 4. Data de próxima revisão
+
+**Schema (migration):**
+- Adicionar coluna `data_revisao DATE NULL` em `pipeline_contratos`.
+
+**Form:**
+- No `PipelineForm.tsx`, adicionar campo **"Próxima revisão"** com `DatePicker` (na seção "Dados do contrato").
+
+**Card:**
+- Mostrar badge no topo do card quando `data_revisao` existir:
+  - **vencida (passou)**: badge vermelho "Revisar há Xd".
+  - **hoje**: badge âmbar "Revisar hoje".
+  - **futura próxima (≤7d)**: badge azul "Revisar em Xd".
+  - **>7d**: ícone discreto com data no tooltip.
+
+**Pipeline page:**
+- Adicionar toggle no header **"Só revisar hoje/atrasados"** que filtra `items` por `data_revisao <= hoje`.
+- Card de KPI "Para revisar hoje" no topo (junto com totais do passo 1).
 
 ---
 
 ## Detalhes técnicos
 
 **Arquivos a criar:**
-- `src/lib/tagColor.ts` — paleta + função de cor por nome.
-- `supabase/functions/pipeline-parse/index.ts` — edge function de extração via Lovable AI.
+- `src/components/pipeline/PipelineAnexos.tsx` — gerenciador de arquivos do bucket por proposta.
+- `src/lib/pipelinePendencias.ts` — regras de campos faltantes.
+- `supabase/migrations/<ts>_pipeline_anexos_e_revisao.sql` — bucket + RLS storage + coluna `data_revisao`.
 
 **Arquivos a editar:**
-- `src/components/pipeline/PipelineCard.tsx` — chips coloridos, click-to-edit, remover botão editar.
-- `src/components/pipeline/PipelineForm.tsx` — bloco "Preenchimento rápido" no topo + lógica de merge.
-- `supabase/config.toml` — registrar a função (se necessário para configs específicas).
+- `src/pages/app/Pipeline.tsx` — total geral, KPI de revisão, toggle de filtro, passar `data_revisao` adiante.
+- `src/components/pipeline/PipelineCard.tsx` — badge de revisão, lista de pendências, indicador de anexos.
+- `src/components/pipeline/PipelineForm.tsx` — campo `data_revisao`, seção "Anexos" (quando editando).
+- `src/integrations/supabase/types.ts` — auto-gerado após migração.
 
-**Sem mudanças no schema do banco.**
+**Sem necessidade de novos secrets.** Tudo usa Lovable Cloud (Supabase Storage + DB).
 
 ## Decisões assumidas
-- Cor por nome via hash → consistente entre sessões sem precisar persistir nada.
-- IA usa `google/gemini-2.5-flash` (sem custo de API key, via Lovable AI).
-- Texto livre aceita qualquer formato (lista, parágrafo, mensagem colada). A IA decide.
-- Merge não destrutivo (não sobrescreve o que o usuário já digitou).
+- Bucket privado com download via `createSignedUrl` (não público), limite implícito de 50MB por arquivo (default Supabase).
+- Pendências são heurística client-side (sem nova coluna no banco) — recalcula em cada render.
+- `data_revisao` é separada da `data_vigencia` (uso operacional do corretor).
+- Filtro "para revisar" é client-side (já temos todos os items em memória).

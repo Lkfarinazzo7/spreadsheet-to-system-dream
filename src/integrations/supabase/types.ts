@@ -263,6 +263,7 @@ export type Database = {
           cliente: string
           created_at: string
           dados_proposta: Json | null
+          data_revisao: string | null
           data_vigencia: string | null
           etapa: Database["public"]["Enums"]["etapa_pipeline"]
           id: string
@@ -280,6 +281,7 @@ export type Database = {
           cliente: string
           created_at?: string
           dados_proposta?: Json | null
+          data_revisao?: string | null
           data_vigencia?: string | null
           etapa?: Database["public"]["Enums"]["etapa_pipeline"]
           id?: string
@@ -297,6 +299,7 @@ export type Database = {
           cliente?: string
           created_at?: string
           dados_proposta?: Json | null
+          data_revisao?: string | null
           data_vigencia?: string | null
           etapa?: Database["public"]["Enums"]["etapa_pipeline"]
           id?: string
