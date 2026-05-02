@@ -15,6 +15,7 @@ import { Loader2, AlertTriangle, Trash2, Sparkles, ChevronDown, ChevronUp } from
 import { DatePicker } from "@/components/ui/date-picker";
 import { MoneyInput } from "@/components/ui/money-input";
 import { maskPhone, getAge } from "@/lib/format";
+import { PipelineAnexos } from "./PipelineAnexos";
 
 type Lookup = { id: string; nome: string };
 
@@ -61,6 +62,7 @@ export type PipelineFormValues = {
   canal_id?: string | null;
   valor_mensal: number;
   data_vigencia?: string | null;
+  data_revisao?: string | null;
   etapa: string;
   observacoes?: string | null;
   dados_proposta?: DadosProposta | null;
