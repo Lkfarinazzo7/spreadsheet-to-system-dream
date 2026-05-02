@@ -386,6 +386,7 @@ export function PipelineForm({
         posicao: Date.now(),
         dados_proposta: form.dados_proposta as any,
       };
+      (payload as any).data_revisao = form.data_revisao || null;
 
       const { error } = form.id
         ? await supabase.from("pipeline_contratos").update(payload).eq("id", form.id)
