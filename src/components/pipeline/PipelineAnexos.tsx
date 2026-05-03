@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { Loader2, Upload, Download, Trash2, FileText, FileSpreadsheet, FileImage, File as FileIcon, Paperclip } from "lucide-react";
+import { Loader2, Upload, Download, Trash2, FileText, FileSpreadsheet, FileImage, File as FileIcon, Paperclip, ExternalLink } from "lucide-react";
 
 type AnexoFile = {
   name: string;
@@ -27,14 +27,20 @@ function formatSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function PipelineAnexos({ pipelineId }: { pipelineId: string }) {
+export function PipelineAnexos({
+  pipelineId,
+  basePrefix,
+}: {
+  pipelineId?: string;
+  basePrefix?: string;
+}) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [files, setFiles] = useState<AnexoFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  const prefix = user ? `${user.id}/${pipelineId}` : "";
+  const prefix = basePrefix ?? (user && pipelineId ? `${user.id}/${pipelineId}` : "");
 
   const load = async () => {
     if (!user) return;
@@ -60,7 +66,7 @@ export function PipelineAnexos({ pipelineId }: { pipelineId: string }) {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pipelineId, user?.id]);
+  }, [prefix, user?.id]);
 
   const onUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const list = e.target.files;
@@ -83,7 +89,7 @@ export function PipelineAnexos({ pipelineId }: { pipelineId: string }) {
     }
   };
 
-  const download = async (f: AnexoFile) => {
+  const openFile = async (f: AnexoFile) => {
     const { data, error } = await supabase.storage
       .from("pipeline-anexos")
       .createSignedUrl(f.fullPath, 60);
@@ -134,16 +140,23 @@ export function PipelineAnexos({ pipelineId }: { pipelineId: string }) {
           {files.map((f) => {
             const Icon = iconFor(f.name);
             return (
-              <li key={f.fullPath} className="flex items-center gap-2 py-2 px-1">
-                <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm truncate">{f.name.replace(/^\d+-/, "")}</div>
-                  <div className="text-[11px] text-muted-foreground">{formatSize(f.size)}</div>
-                </div>
-                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => download(f)}>
-                  <Download className="h-3.5 w-3.5" />
-                </Button>
-                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => remove(f)}>
+              <li key={f.fullPath} className="flex items-center gap-2 py-2 px-1 hover:bg-muted/40 rounded transition-colors">
+                <button
+                  type="button"
+                  onClick={() => openFile(f)}
+                  className="flex items-center gap-2 min-w-0 flex-1 text-left"
+                  title="Abrir arquivo"
+                >
+                  <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm truncate group-hover:text-primary flex items-center gap-1">
+                      {f.name.replace(/^\d+-/, "")}
+                      <ExternalLink className="h-3 w-3 opacity-50" />
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">{formatSize(f.size)}</div>
+                  </div>
+                </button>
+                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => remove(f)} title="Excluir">
                   <Trash2 className="h-3.5 w-3.5 text-destructive" />
                 </Button>
               </li>

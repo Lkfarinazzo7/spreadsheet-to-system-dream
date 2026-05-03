@@ -11,11 +11,13 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { Loader2, AlertTriangle, Trash2, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, AlertTriangle, Trash2, Sparkles, ChevronDown, ChevronUp, Mail } from "lucide-react";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MoneyInput } from "@/components/ui/money-input";
 import { maskPhone, getAge } from "@/lib/format";
 import { PipelineAnexos } from "./PipelineAnexos";
+import { ElaboracaoEmailDialog } from "./ElaboracaoEmailDialog";
+import { buildElaboracaoEmail } from "@/lib/elaboracaoEmail";
 
 type Lookup = { id: string; nome: string };
 
@@ -152,10 +154,12 @@ export function PipelineForm({
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
   const [operadoras, setOperadoras] = useState<Lookup[]>([]);
+  const [canais, setCanais] = useState<Lookup[]>([]);
   const [form, setForm] = useState<PipelineFormValues>(initial ?? empty);
   const [quickText, setQuickText] = useState("");
   const [parsing, setParsing] = useState(false);
   const [quickOpen, setQuickOpen] = useState(true);
+  const [emailOpen, setEmailOpen] = useState(false);
 
   useEffect(() => {
     setForm(
@@ -178,12 +182,12 @@ export function PipelineForm({
   useEffect(() => {
     if (!open) return;
     (async () => {
-      const { data } = await supabase
-        .from("operadoras")
-        .select("id,nome")
-        .eq("ativo", true)
-        .order("nome");
-      setOperadoras((data as any) ?? []);
+      const [o, c] = await Promise.all([
+        supabase.from("operadoras").select("id,nome").eq("ativo", true).order("nome"),
+        supabase.from("canais_venda").select("id,nome").eq("ativo", true).order("nome"),
+      ]);
+      setOperadoras((o.data as any) ?? []);
+      setCanais((c.data as any) ?? []);
     })();
   }, [open]);
 
@@ -498,6 +502,15 @@ export function PipelineForm({
                 </Select>
               </div>
               <div className="space-y-1.5">
+                <Label>Canal de venda</Label>
+                <Select value={form.canal_id ?? ""} onValueChange={(v) => set("canal_id", v)}>
+                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectContent>
+                    {canais.map((c) => (<SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
                 <Label>Categoria</Label>
                 <Input value={dp.categoria ?? ""} onChange={(e) => setDP({ categoria: e.target.value })} />
               </div>
@@ -766,12 +779,32 @@ export function PipelineForm({
           )}
 
           <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEmailOpen(true)}
+              disabled={!form.cliente?.trim()}
+            >
+              <Mail className="h-4 w-4" /> Gerar e-mail de elaboração
+            </Button>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
             <Button type="submit" disabled={busy}>
               {busy && <Loader2 className="h-4 w-4 animate-spin" />} Salvar
             </Button>
           </DialogFooter>
         </form>
+        {(() => {
+          const opNome = operadoras.find((o) => o.id === form.operadora_id)?.nome;
+          const { assunto, corpo } = buildElaboracaoEmail(form, opNome);
+          return (
+            <ElaboracaoEmailDialog
+              open={emailOpen}
+              onOpenChange={setEmailOpen}
+              assunto={assunto}
+              corpo={corpo}
+            />
+          );
+        })()}
       </DialogContent>
     </Dialog>
   );

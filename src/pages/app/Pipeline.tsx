@@ -118,15 +118,30 @@ export default function Pipeline() {
     setPromoteOpen(true);
   };
 
-  const onContratoSaved = async () => {
-    // After contrato is saved successfully, remove from pipeline
-    if (promoting) {
-      await supabase.from("pipeline_contratos").delete().eq("id", promoting.id);
-      setPromoting(null);
-      setPromoteInitial(null);
-      toast({ title: "Implantado!", description: "Cartão movido para Contratos." });
-      load();
+  const onContratoSaved = async (contratoId?: string) => {
+    if (!promoting) return;
+    // Move pipeline attachments to contratos folder so the user keeps access.
+    if (contratoId && user) {
+      try {
+        const oldPrefix = `${user.id}/${promoting.id}`;
+        const newPrefix = `${user.id}/contratos/${contratoId}`;
+        const { data: files } = await supabase.storage
+          .from("pipeline-anexos")
+          .list(oldPrefix, { limit: 1000 });
+        for (const f of files ?? []) {
+          await supabase.storage
+            .from("pipeline-anexos")
+            .move(`${oldPrefix}/${f.name}`, `${newPrefix}/${f.name}`);
+        }
+      } catch (e) {
+        console.warn("[Pipeline] erro ao mover anexos:", e);
+      }
     }
+    await supabase.from("pipeline_contratos").delete().eq("id", promoting.id);
+    setPromoting(null);
+    setPromoteInitial(null);
+    toast({ title: "Implantado!", description: "Cartão e anexos movidos para Contratos." });
+    load();
   };
 
   const handleDragEnd = async (e: DragEndEvent) => {
