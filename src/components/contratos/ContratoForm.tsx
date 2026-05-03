@@ -13,7 +13,6 @@ import { Separator } from "@/components/ui/separator";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MoneyInput } from "@/components/ui/money-input";
 import { ContratoAnexos } from "./ContratoAnexos";
-import { Separator as Sep2 } from "@/components/ui/separator";
 
 type Lookup = { id: string; nome: string };
 
@@ -301,7 +300,7 @@ export function ContratoForm({
 
           {form.id && (
             <div className="col-span-2 space-y-2">
-              <Sep2 />
+              <Separator />
               <ContratoAnexos contratoId={form.id} />
             </div>
           )}
