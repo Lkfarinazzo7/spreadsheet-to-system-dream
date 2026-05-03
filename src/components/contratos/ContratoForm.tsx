@@ -12,6 +12,8 @@ import { Loader2, Plus, Trash2 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MoneyInput } from "@/components/ui/money-input";
+import { ContratoAnexos } from "./ContratoAnexos";
+import { Separator as Sep2 } from "@/components/ui/separator";
 
 type Lookup = { id: string; nome: string };
 
@@ -78,7 +80,7 @@ export function ContratoForm({
   open: boolean;
   onOpenChange: (v: boolean) => void;
   initial?: ContratoFormValues | null;
-  onSaved: () => void;
+  onSaved: (contratoId?: string) => void;
 }) {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -224,7 +226,7 @@ export function ContratoForm({
 
       toast({ title: form.id ? "Contrato atualizado" : "Contrato criado" });
       onOpenChange(false);
-      onSaved();
+      onSaved(contratoId);
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
     } finally {
@@ -296,6 +298,13 @@ export function ContratoForm({
             <Label>Observações</Label>
             <Textarea rows={2} value={form.observacoes ?? ""} onChange={(e) => set("observacoes", e.target.value)} />
           </div>
+
+          {form.id && (
+            <div className="col-span-2 space-y-2">
+              <Sep2 />
+              <ContratoAnexos contratoId={form.id} />
+            </div>
+          )}
 
           <div className="col-span-2">
             <Separator className="my-2" />
