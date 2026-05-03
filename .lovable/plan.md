@@ -1,85 +1,84 @@
-## Objetivo
+# Melhorias na Pipeline
 
-Quatro melhorias na Pipeline:
-1. **Total geral** no topo somando todas as etapas.
-2. **Anexos** (tipo "Drive") por proposta com upload de documentos.
-3. **Checklist de pendências** no rodapé do card mostrando o que falta preencher.
-4. **Data de próxima revisão** por proposta + filtro/destaque visual.
+## 1. Abrir anexos com 1 clique
 
----
+Em `src/components/pipeline/PipelineAnexos.tsx`:
+- Tornar o nome/linha do arquivo clicável: `onClick` gera signed URL (60s) e abre em nova aba (`window.open(url, "_blank")`).
+- O botão de download fica como ação secundária (ícone) ao lado do excluir.
+- PDFs e imagens abrem inline no navegador; outros formatos baixam normalmente — comportamento padrão do browser.
 
-## 1. Total geral no topo da Pipeline
+## 2. Arquivos continuam disponíveis após implantação (promover para Contratos)
 
-Em `src/pages/app/Pipeline.tsx`, dentro do `PageHeader` (ou logo abaixo):
-- Calcular `totalGeral = items.reduce((s,i) => s + Number(i.valor_mensal||0), 0)` e `totalCount = items.length`.
-- Mostrar uma faixa com cards pequenos: **"Total em pipeline"** (valor) e **"Propostas ativas"** (contagem).
+Hoje, ao mover um card para "Implantado", o registro do pipeline é apagado e os anexos ficam órfãos no bucket. Vamos preservar e expor no contrato:
 
-## 2. Anexos por proposta ("Drive")
+**Storage layout:**
+- Pipeline: `pipeline-anexos/{user_id}/{pipeline_id}/...` (já existe)
+- Contratos: `pipeline-anexos/{user_id}/contratos/{contrato_id}/...` (mesmo bucket, nova "pasta")
 
-**Backend (migration):**
-- Criar bucket privado `pipeline-anexos` em `storage.buckets`.
-- RLS em `storage.objects` para o bucket: usuário só lê/escreve/deleta arquivos cujo `path` começa com `auth.uid()/`.
-- Convenção de path: `{user_id}/{pipeline_id}/{timestamp}-{nome_arquivo}`.
+**Fluxo de promoção** (em `src/pages/app/Pipeline.tsx`, função `onContratoSaved`):
+1. Após o `ContratoForm` salvar e retornar o `contrato.id`, listar arquivos em `{user_id}/{pipeline_id}/`.
+2. Para cada arquivo, chamar `supabase.storage.from('pipeline-anexos').move(oldPath, newPath)` para `{user_id}/contratos/{contrato_id}/{nome}`.
+3. Só então deletar o registro do pipeline.
+4. Para isso, o `ContratoForm.onSaved` precisa retornar o `id` do contrato salvo. Ajuste: mudar a assinatura para `onSaved: (contratoId?: string) => void` e passar o id após insert/update.
 
-**Componente novo `PipelineAnexos.tsx`:**
-- Lista arquivos do prefixo `{user_id}/{pipeline_id}/` via `supabase.storage.from('pipeline-anexos').list()`.
-- Botão **"Adicionar arquivos"** (multi-upload, drag-and-drop opcional).
-- Cada item: ícone por extensão (PDF/DOC/XLS/IMG), nome, tamanho, data, botões **baixar** (createSignedUrl 60s) e **excluir**.
-- Estado vazio amigável.
+**Componente `ContratoAnexos`:** novo arquivo `src/components/contratos/ContratoAnexos.tsx`, basicamente uma cópia de `PipelineAnexos` com o prefixo `{user_id}/contratos/{contrato_id}`. Renderizado dentro do `ContratoForm` quando existir `form.id`.
 
-**Integração:**
-- No `PipelineForm.tsx`, adicionar uma seção **"Anexos"** (visível só ao editar — precisa do `id`).
-- No `PipelineCard.tsx`, mostrar um pequeno indicador `📎 N` quando houver anexos. Para evitar N requests, opcionalmente armazenar `anexos_count` denormalizado em `dados_proposta` (atualizado ao subir/remover) — primeira versão pode pular esse contador para simplicidade.
+## 3. Campo Canal faltando dentro do card
 
-## 3. Checklist de pendências no card
+Em `PipelineForm.tsx`, hoje só existe o select de Operadora. Vamos:
+- Carregar `canais_venda` (mesmo padrão do ContratoForm).
+- Adicionar `<Select>` "Canal de venda" no grid de "Dados do contrato", logo após Operadora, escrevendo em `form.canal_id`.
 
-Criar `src/lib/pipelinePendencias.ts` com função `getPendencias(item)` que retorna lista de strings dos campos importantes ainda vazios. Regras:
-- Sempre verifica: `numero_proposta`, `operadora_id`, `canal_id`, `valor_mensal>0`, `data_vigencia`, `dados_proposta.cnpj_cpf`, `dados_proposta.vidas`, `dados_proposta.acomodacao`, `dados_proposta.coparticipacao`.
-- Se PJ: também `endereco_empresa`.
-- Se houver `qtd_titulares > 0`: verificar que cada titular tem `nome` e `cpf` preenchidos; senão adiciona "Titular N incompleto".
+Assim o card também passa a exibir a tag de canal (a UI já está pronta para isso em `PipelineCard.tsx`).
 
-No `PipelineCard.tsx`, no rodapé (após o valor):
-- Se `pendencias.length === 0`: badge verde discreto **"Completo"** com `CheckCircle2`.
-- Caso contrário: bloquinho colapsado mostrando até 3 itens com `AlertCircle` âmbar + "+N mais" se exceder. Texto pequeno (text-[10.5px]), não interfere no drag.
+## 4. Gerador de "E-mail de elaboração" para o ADM
 
-## 4. Data de próxima revisão
+Botão **"Gerar e-mail de elaboração"** dentro do `PipelineForm` (no rodapé, ao lado de Salvar) que monta o texto a partir dos dados já preenchidos, no formato:
 
-**Schema (migration):**
-- Adicionar coluna `data_revisao DATE NULL` em `pipeline_contratos`.
+```text
+Elaboração {Operadora} {NomeTitular} {CPF}
 
-**Form:**
-- No `PipelineForm.tsx`, adicionar campo **"Próxima revisão"** com `DatePicker` (na seção "Dados do contrato").
+Elaboração {Operadora} Pessoa {Física|Jurídica}
 
-**Card:**
-- Mostrar badge no topo do card quando `data_revisao` existir:
-  - **vencida (passou)**: badge vermelho "Revisar há Xd".
-  - **hoje**: badge âmbar "Revisar hoje".
-  - **futura próxima (≤7d)**: badge azul "Revisar em Xd".
-  - **>7d**: ícone discreto com data no tooltip.
+Plano: {Operadora} {Categoria}
+➡️Acomodação: {Apartamento|Enfermaria}
+➡️Modalidade: {Compulsório (PJ) | Adesão | Individual (PF)}
+➡️Cnpj/Cpf: {cnpj_cpf}
+➡️Razão social: {cliente}    (apenas PJ)
+➡️Endereço de correspondência: {endereco do titular ou endereco_empresa}
 
-**Pipeline page:**
-- Adicionar toggle no header **"Só revisar hoje/atrasados"** que filtra `items` por `data_revisao <= hoje`.
-- Card de KPI "Para revisar hoje" no topo (junto com totais do passo 1).
+Dados do Representante
+➡️Nome: {titular.nome}
+➡️Email: {titular.email}
+➡️Telefone: {titular.telefone}
+➡️Plano anterior: {titular.plano_anterior || "Sem plano"}
 
----
+👥Dependentes
+➡️Nome: {dep.nome}
+➡️Grau de parentesco: {dep.parentesco}
+➡️Plano anterior: {dep.plano_anterior || "Sem plano"}
 
-## Detalhes técnicos
+Obs: {form.observacoes ou texto padrão de declaração}
+```
 
-**Arquivos a criar:**
-- `src/components/pipeline/PipelineAnexos.tsx` — gerenciador de arquivos do bucket por proposta.
-- `src/lib/pipelinePendencias.ts` — regras de campos faltantes.
-- `supabase/migrations/<ts>_pipeline_anexos_e_revisao.sql` — bucket + RLS storage + coluna `data_revisao`.
+**UX:** ao clicar, abre um `Dialog` com:
+- `Textarea` editável já preenchido com o texto montado.
+- Campo "Assunto" pré-preenchido: `Elaboração {Operadora} {Titular} {CPF}`.
+- Campo "E-mail do ADM" (lembrado em `localStorage` por usuário) — opcional.
+- Botões: **Copiar** (clipboard) e **Abrir no e-mail** (`mailto:` com subject + body codificados). Mantemos simples, sem configurar provedor de e-mail agora.
 
-**Arquivos a editar:**
-- `src/pages/app/Pipeline.tsx` — total geral, KPI de revisão, toggle de filtro, passar `data_revisao` adiante.
-- `src/components/pipeline/PipelineCard.tsx` — badge de revisão, lista de pendências, indicador de anexos.
-- `src/components/pipeline/PipelineForm.tsx` — campo `data_revisao`, seção "Anexos" (quando editando).
-- `src/integrations/supabase/types.ts` — auto-gerado após migração.
+Helper novo: `src/lib/elaboracaoEmail.ts` exportando `buildElaboracaoEmail(form, operadoraNome)` para gerar `{ assunto, corpo }`.
 
-**Sem necessidade de novos secrets.** Tudo usa Lovable Cloud (Supabase Storage + DB).
+Componente novo: `src/components/pipeline/ElaboracaoEmailDialog.tsx`.
 
-## Decisões assumidas
-- Bucket privado com download via `createSignedUrl` (não público), limite implícito de 50MB por arquivo (default Supabase).
-- Pendências são heurística client-side (sem nova coluna no banco) — recalcula em cada render.
-- `data_revisao` é separada da `data_vigencia` (uso operacional do corretor).
-- Filtro "para revisar" é client-side (já temos todos os items em memória).
+## Arquivos afetados
+
+- editar: `src/components/pipeline/PipelineAnexos.tsx` (clique abre arquivo)
+- editar: `src/components/pipeline/PipelineForm.tsx` (campo Canal + botão de e-mail)
+- editar: `src/components/contratos/ContratoForm.tsx` (`onSaved` devolve id, render de `ContratoAnexos`)
+- editar: `src/pages/app/Pipeline.tsx` (mover anexos antes de deletar pipeline)
+- novo: `src/components/contratos/ContratoAnexos.tsx`
+- novo: `src/components/pipeline/ElaboracaoEmailDialog.tsx`
+- novo: `src/lib/elaboracaoEmail.ts`
+
+Sem migrações — o bucket `pipeline-anexos` e suas policies (escopadas por `auth.uid()` no primeiro segmento do path) já cobrem o novo prefixo `{user_id}/contratos/...`.
