@@ -18,6 +18,9 @@ export type PipelineItem = {
   etapa: string;
   operadora_id?: string | null;
   canal_id?: string | null;
+  declinada?: boolean | null;
+  motivo_declinio?: string | null;
+  declinada_em?: string | null;
   operadora?: { nome: string } | null;
   canal?: { nome: string } | null;
   dados_proposta?: { vidas?: number } | null;
@@ -53,11 +56,12 @@ export function PipelineCard({
     const [y, m, d] = item.data_revisao.split("-").map(Number);
     const dt = new Date(y, m - 1, d);
     const diff = Math.round((dt.getTime() - today.getTime()) / 86400000);
-    if (diff < 0) return { label: `Revisar há ${Math.abs(diff)}d`, cls: "bg-destructive/15 text-destructive border-destructive/30" };
-    if (diff === 0) return { label: "Revisar hoje", cls: "bg-warning/20 text-warning-foreground border-warning/40" };
-    if (diff <= 7) return { label: `Revisar em ${diff}d`, cls: "bg-primary/15 text-primary border-primary/30" };
-    return { label: formatDate(item.data_revisao), cls: "bg-muted text-muted-foreground border-border" };
+    if (diff < 0) return { label: `Revisar há ${Math.abs(diff)}d`, cls: "bg-destructive/15 text-destructive border-destructive/40", urgent: true };
+    if (diff === 0) return { label: "Revisar HOJE", cls: "bg-warning text-warning-foreground border-warning shadow-sm", urgent: true };
+    if (diff <= 7) return { label: `Revisar em ${diff}d`, cls: "bg-primary/15 text-primary border-primary/30", urgent: false };
+    return { label: formatDate(item.data_revisao), cls: "bg-muted text-muted-foreground border-border", urgent: false };
   })();
+  const isUrgent = !!revisao?.urgent;
 
   const handleClick = (e: React.MouseEvent) => {
     // dnd-kit only triggers drag after distance threshold; a clean click reaches here.
@@ -70,9 +74,11 @@ export function PipelineCard({
       ref={setNodeRef}
       style={style}
       onClick={handleClick}
-      className={`group p-3 mb-2 rounded-xl cursor-pointer active:cursor-grabbing select-none border-border/60 shadow-sm hover:shadow-md hover:border-primary/40 hover:-translate-y-0.5 transition-all ${
-        isDragging ? "ring-2 ring-primary/40 shadow-lg rotate-1 cursor-grabbing" : ""
-      }`}
+      className={`group p-3 mb-2 rounded-xl cursor-pointer active:cursor-grabbing select-none border shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all ${
+        isUrgent
+          ? "border-warning/60 bg-warning/5 ring-2 ring-warning/40 hover:border-warning"
+          : "border-border/60 hover:border-primary/40"
+      } ${isDragging ? "ring-2 ring-primary/40 shadow-lg rotate-1 cursor-grabbing" : ""}`}
       {...attributes}
       {...listeners}
     >
@@ -93,9 +99,13 @@ export function PipelineCard({
 
       {revisao && (
         <div className="mt-2">
-          <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10.5px] font-semibold ${revisao.cls}`}>
-            <CalendarClock className="h-3 w-3" />
-            {revisao.label}
+          <span
+            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 font-bold ${revisao.cls} ${
+              isUrgent ? "text-[12px] uppercase tracking-wide" : "text-[10.5px]"
+            }`}
+          >
+            <CalendarClock className={isUrgent ? "h-3.5 w-3.5" : "h-3 w-3"} />
+            Próxima revisão: {revisao.label}
           </span>
         </div>
       )}

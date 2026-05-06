@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { Loader2, AlertTriangle, Trash2, Sparkles, ChevronDown, ChevronUp, Mail } from "lucide-react";
+import { Loader2, AlertTriangle, Trash2, Sparkles, ChevronDown, ChevronUp, Mail, Ban } from "lucide-react";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MoneyInput } from "@/components/ui/money-input";
 import { maskPhone, getAge } from "@/lib/format";
@@ -787,6 +787,34 @@ export function PipelineForm({
             >
               <Mail className="h-4 w-4" /> Gerar e-mail de elaboração
             </Button>
+            {form.id && (
+              <Button
+                type="button"
+                variant="outline"
+                className="text-destructive hover:text-destructive"
+                onClick={async () => {
+                  const motivo = window.prompt("Motivo do declínio (opcional):") ?? "";
+                  if (motivo === null) return;
+                  const { error } = await supabase
+                    .from("pipeline_contratos")
+                    .update({
+                      declinada: true,
+                      motivo_declinio: motivo || null,
+                      declinada_em: new Date().toISOString(),
+                    } as any)
+                    .eq("id", form.id!);
+                  if (error) {
+                    toast({ title: "Erro ao declinar", description: error.message, variant: "destructive" });
+                    return;
+                  }
+                  toast({ title: "Proposta declinada" });
+                  onOpenChange(false);
+                  onSaved();
+                }}
+              >
+                <Ban className="h-4 w-4" /> Marcar como declinada
+              </Button>
+            )}
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
             <Button type="submit" disabled={busy}>
               {busy && <Loader2 className="h-4 w-4 animate-spin" />} Salvar

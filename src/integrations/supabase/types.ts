@@ -265,8 +265,11 @@ export type Database = {
           dados_proposta: Json | null
           data_revisao: string | null
           data_vigencia: string | null
+          declinada: boolean
+          declinada_em: string | null
           etapa: Database["public"]["Enums"]["etapa_pipeline"]
           id: string
+          motivo_declinio: string | null
           numero_proposta: string | null
           observacoes: string | null
           operadora_id: string | null
@@ -283,8 +286,11 @@ export type Database = {
           dados_proposta?: Json | null
           data_revisao?: string | null
           data_vigencia?: string | null
+          declinada?: boolean
+          declinada_em?: string | null
           etapa?: Database["public"]["Enums"]["etapa_pipeline"]
           id?: string
+          motivo_declinio?: string | null
           numero_proposta?: string | null
           observacoes?: string | null
           operadora_id?: string | null
@@ -301,8 +307,11 @@ export type Database = {
           dados_proposta?: Json | null
           data_revisao?: string | null
           data_vigencia?: string | null
+          declinada?: boolean
+          declinada_em?: string | null
           etapa?: Database["public"]["Enums"]["etapa_pipeline"]
           id?: string
+          motivo_declinio?: string | null
           numero_proposta?: string | null
           observacoes?: string | null
           operadora_id?: string | null

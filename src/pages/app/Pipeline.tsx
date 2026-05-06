@@ -11,9 +11,11 @@ import { PipelineItem } from "@/components/pipeline/PipelineCard";
 import { PipelineForm, PipelineFormValues } from "@/components/pipeline/PipelineForm";
 import { ContratoForm, ContratoFormValues } from "@/components/contratos/ContratoForm";
 import { PipelineImportDialog } from "@/components/pipeline/PipelineImportDialog";
+import { DeclinadasDialog } from "@/components/pipeline/DeclinadasDialog";
 import { formatCurrency } from "@/lib/format";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Ban } from "lucide-react";
 
 const ETAPAS = [
   "Montagem de contrato",
@@ -49,6 +51,8 @@ export default function Pipeline() {
   const [editing, setEditing] = useState<PipelineFormValues | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [onlyRevisar, setOnlyRevisar] = useState(false);
+  const [declinadasOpen, setDeclinadasOpen] = useState(false);
+  const [declinadasCount, setDeclinadasCount] = useState(0);
 
   // Promote modal (open ContratoForm with prefilled data)
   const [promoteOpen, setPromoteOpen] = useState(false);
@@ -62,6 +66,7 @@ export default function Pipeline() {
       .from("pipeline_contratos")
       .select("*, operadora:operadoras(nome), canal:canais_venda(nome)")
       .neq("etapa", "Implantado")
+      .eq("declinada", false)
       .order("posicao");
     if (error) {
       console.error("[Pipeline] load error:", error);
@@ -73,6 +78,12 @@ export default function Pipeline() {
       return;
     }
     setItems((data as any) ?? []);
+    // count declinadas
+    const { count } = await supabase
+      .from("pipeline_contratos")
+      .select("id", { count: "exact", head: true })
+      .eq("declinada", true);
+    setDeclinadasCount(count ?? 0);
   };
 
   useEffect(() => {
@@ -89,6 +100,14 @@ export default function Pipeline() {
       : items;
     for (const it of filtered) {
       if (map[it.etapa]) map[it.etapa].push(it);
+    }
+    // Ordena urgentes (revisão hoje/atrasada) primeiro dentro de cada etapa
+    for (const e of ETAPAS) {
+      map[e].sort((a, b) => {
+        const au = a.data_revisao && a.data_revisao <= today ? 0 : 1;
+        const bu = b.data_revisao && b.data_revisao <= today ? 0 : 1;
+        return au - bu;
+      });
     }
     return map;
   }, [items, onlyRevisar]);
@@ -200,6 +219,14 @@ export default function Pipeline() {
         description="Propostas em andamento até a implantação"
         actions={
           <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setDeclinadasOpen(true)}>
+              <Ban className="h-4 w-4" /> Declinadas
+              {declinadasCount > 0 && (
+                <span className="ml-1 inline-flex items-center justify-center rounded-full bg-destructive/15 text-destructive text-[10px] font-semibold px-1.5 min-w-5 h-5">
+                  {declinadasCount}
+                </span>
+              )}
+            </Button>
             <Button variant="outline" onClick={() => setImportOpen(true)}>
               <Upload className="h-4 w-4" /> Importar planilha
             </Button>
@@ -264,6 +291,8 @@ export default function Pipeline() {
       <PipelineForm open={formOpen} onOpenChange={setFormOpen} initial={editing} onSaved={load} />
 
       <PipelineImportDialog open={importOpen} onOpenChange={setImportOpen} onImported={load} />
+
+      <DeclinadasDialog open={declinadasOpen} onOpenChange={setDeclinadasOpen} onChanged={load} />
 
       <ContratoForm
         open={promoteOpen}
