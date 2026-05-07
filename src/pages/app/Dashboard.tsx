@@ -110,15 +110,30 @@ export default function Dashboard() {
     const recebidas = inPeriod.filter((c) => c.pago);
     const aReceber = inPeriod.filter((c) => !c.pago).reduce((s, c) => s + Number(c.valor), 0);
     const receitaMes = recebidas.reduce((s, c) => s + Number(c.valor), 0);
-    const totalContratos = contratosPeriodo.reduce((s, c) => s + Number(c.valor_mensal || 0), 0);
-    const ticketReceita = contratosPeriodo.length ? totalContratos / contratosPeriodo.length : 0;
+    // Ticket médio: receita TOTAL recebida por contrato (somando todas as parcelas
+    // pagas daquele contrato, em qualquer data) ÷ qtd de contratos no período.
+    const receitaPorContrato = new Map<string, number>();
+    comissoes.forEach((c) => {
+      if (!c.pago || !c.contrato_id) return;
+      receitaPorContrato.set(
+        c.contrato_id,
+        (receitaPorContrato.get(c.contrato_id) ?? 0) + Number(c.valor),
+      );
+    });
+    const receitaTotalContratos = contratosPeriodo.reduce(
+      (s, c) => s + (receitaPorContrato.get(c.id) ?? 0),
+      0,
+    );
+    const ticketReceita = contratosPeriodo.length
+      ? receitaTotalContratos / contratosPeriodo.length
+      : 0;
     return {
       receitaMes,
       aReceber,
       ticketReceita,
       qtdContratos: contratosPeriodo.length,
     };
-  }, [inPeriod, contratosPeriodo]);
+  }, [inPeriod, contratosPeriodo, comissoes]);
 
   // Por operadora — soma do valor recebido no período, ordem decrescente
   const porOperadora = useMemo(() => {
