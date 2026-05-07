@@ -180,7 +180,6 @@ export function PipelineForm({
   }, [initial, open]);
 
   useEffect(() => {
-    if (!open) return;
     (async () => {
       const [o, c] = await Promise.all([
         supabase.from("operadoras").select("id,nome").eq("ativo", true).order("nome"),
@@ -189,7 +188,7 @@ export function PipelineForm({
       setOperadoras((o.data as any) ?? []);
       setCanais((c.data as any) ?? []);
     })();
-  }, [open]);
+  }, []);
 
   // Auto-fill data_reajuste when vigencia is set and reajuste empty
   useEffect(() => {
