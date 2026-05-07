@@ -17,7 +17,20 @@ export function getPendencias(item: PipelineItem & { operadora_id?: string | nul
 
   const titulares = Array.isArray(dp.titulares) ? dp.titulares : [];
   titulares.forEach((t: any, i: number) => {
-    if (!t?.nome || !t?.cpf) out.push(`Titular ${i + 1} incompleto`);
+    const label = t?.nome ? t.nome.split(" ")[0] : `Titular ${i + 1}`;
+    if (!t?.nome) out.push(`Nome titular ${i + 1}`);
+    if (!t?.cpf) out.push(`CPF ${label}`);
+    if (!t?.data_nascimento) out.push(`Nasc. ${label}`);
+    if (!t?.telefone) out.push(`Telefone ${label}`);
+
+    const deps = Array.isArray(t?.dependentes) ? t.dependentes : [];
+    deps.forEach((d: any, j: number) => {
+      const dLabel = d?.nome ? d.nome.split(" ")[0] : `Dep. ${j + 1}`;
+      if (!d?.nome) out.push(`Nome dep. ${j + 1} (${label})`);
+      if (!d?.parentesco) out.push(`Parentesco ${dLabel}`);
+      if (!d?.cpf) out.push(`CPF ${dLabel}`);
+      if (!d?.data_nascimento) out.push(`Nasc. ${dLabel}`);
+    });
   });
 
   return out;
