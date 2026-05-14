@@ -305,6 +305,16 @@ export function ContratoForm({
           {form.id && (
             <div className="col-span-2 space-y-2">
               <Separator />
+              <div>
+                <h3 className="font-semibold text-sm mb-2">Dados da proposta</h3>
+                <DadosPropostaEditor
+                  value={form.dados_proposta ?? { acomodacao: "", coparticipacao: "", titulares: [] }}
+                  onChange={(v) => set("dados_proposta", v)}
+                  operadoras={operadoras}
+                  tipo={form.tipo}
+                />
+              </div>
+              <Separator />
               <ContratoAnexos contratoId={form.id} />
             </div>
           )}
