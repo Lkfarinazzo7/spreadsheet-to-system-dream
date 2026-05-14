@@ -14,11 +14,13 @@ export function ElaboracaoEmailDialog({
   onOpenChange,
   assunto: assuntoIn,
   corpo: corpoIn,
+  titulo = "E-mail de elaboração",
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   assunto: string;
   corpo: string;
+  titulo?: string;
 }) {
   const { toast } = useToast();
   const [assunto, setAssunto] = useState(assuntoIn);
@@ -52,7 +54,7 @@ export function ElaboracaoEmailDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>E-mail de elaboração</DialogTitle>
+          <DialogTitle>{titulo}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
