@@ -67,7 +67,7 @@ export function PipelineAnexos({
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [zipping, setZipping] = useState(false);
-  const [viewer, setViewer] = useState<{ file: AnexoFile; url: string } | null>(null);
+  const [viewer, setViewer] = useState<{ file: AnexoFile; url: string; downloadUrl: string } | null>(null);
 
   const prefix = basePrefix ?? (user && pipelineId ? `${user.id}/${pipelineId}` : "");
 
@@ -116,15 +116,40 @@ export function PipelineAnexos({
   };
 
   const openViewer = async (f: AnexoFile) => {
-    const { data, error } = await supabase.storage
+    const { data: signed, error: signErr } = await supabase.storage
       .from("pipeline-anexos")
       .createSignedUrl(f.fullPath, 600);
-    if (error || !data) {
+    if (signErr || !signed) {
       toast({ title: "Erro ao gerar link", variant: "destructive" });
       return;
     }
-    setViewer({ file: f, url: data.signedUrl });
+    const kind = kindOf(f.name);
+    // Para PDFs/imagens, baixamos e geramos um blob URL (evita bloqueio do Chrome ao
+    // renderizar PDFs assinados de outra origem dentro de um iframe).
+    if (kind === "pdf" || kind === "image") {
+      const { data: blob, error: dlErr } = await supabase.storage
+        .from("pipeline-anexos")
+        .download(f.fullPath);
+      if (dlErr || !blob) {
+        toast({ title: "Erro ao carregar arquivo", variant: "destructive" });
+        return;
+      }
+      const typed = kind === "pdf"
+        ? new Blob([blob], { type: "application/pdf" })
+        : blob;
+      const blobUrl = URL.createObjectURL(typed);
+      setViewer({ file: f, url: blobUrl, downloadUrl: signed.signedUrl });
+      return;
+    }
+    setViewer({ file: f, url: signed.signedUrl, downloadUrl: signed.signedUrl });
   };
+
+  // Libera o blob URL quando o visualizador é fechado.
+  useEffect(() => {
+    return () => {
+      if (viewer?.url.startsWith("blob:")) URL.revokeObjectURL(viewer.url);
+    };
+  }, [viewer?.url]);
 
   const downloadOne = async (f: AnexoFile) => {
     const { data, error } = await supabase.storage.from("pipeline-anexos").download(f.fullPath);
@@ -234,7 +259,7 @@ export function PipelineAnexos({
                 <Button size="sm" variant="outline" onClick={() => downloadOne(viewer.file)}>
                   <Download className="h-4 w-4" /> Baixar
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => window.open(viewer.url, "_blank")}>
+                <Button size="sm" variant="outline" onClick={() => window.open(viewer.downloadUrl, "_blank")}>
                   <ExternalLink className="h-4 w-4" /> Nova aba
                 </Button>
               </div>
