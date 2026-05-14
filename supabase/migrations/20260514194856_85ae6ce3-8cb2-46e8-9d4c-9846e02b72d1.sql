@@ -1,0 +1,1 @@
+ALTER TABLE public.contratos ADD COLUMN IF NOT EXISTS dados_proposta jsonb;

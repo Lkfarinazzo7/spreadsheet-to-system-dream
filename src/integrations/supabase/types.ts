@@ -121,6 +121,7 @@ export type Database = {
           categoria_id: string | null
           cliente: string
           created_at: string
+          dados_proposta: Json | null
           data_reajuste: string | null
           data_vigencia: string | null
           id: string
@@ -139,6 +140,7 @@ export type Database = {
           categoria_id?: string | null
           cliente: string
           created_at?: string
+          dados_proposta?: Json | null
           data_reajuste?: string | null
           data_vigencia?: string | null
           id?: string
@@ -157,6 +159,7 @@ export type Database = {
           categoria_id?: string | null
           cliente?: string
           created_at?: string
+          dados_proposta?: Json | null
           data_reajuste?: string | null
           data_vigencia?: string | null
           id?: string
