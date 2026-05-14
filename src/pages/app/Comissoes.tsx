@@ -8,11 +8,12 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DatePicker } from "@/components/ui/date-picker";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { Plus, Check, Trash2 } from "lucide-react";
+import { Plus, Check, Trash2, X } from "lucide-react";
 
 type Comissao = {
   id: string;
@@ -32,6 +33,9 @@ export default function Comissoes() {
   const [contratos, setContratos] = useState<{ id: string; cliente: string }[]>([]);
   const [open, setOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [dateField, setDateField] = useState<"mes_previsto" | "data_pagamento">("mes_previsto");
+  const [dateFrom, setDateFrom] = useState<string | null>(null);
+  const [dateTo, setDateTo] = useState<string | null>(null);
   const [form, setForm] = useState<Partial<Comissao>>({ parcela: 1, tipo: "Bancaria", valor: 0, pago: false });
 
   const load = async () => {
@@ -56,8 +60,15 @@ export default function Comissoes() {
       if (statusFilter === "pago") return r.pago;
       if (statusFilter === "aberto") return !r.pago;
       return true;
+    }).filter((r) => {
+      if (!dateFrom && !dateTo) return true;
+      const v = dateField === "mes_previsto" ? r.mes_previsto : r.data_pagamento;
+      if (!v) return false;
+      if (dateFrom && v < dateFrom) return false;
+      if (dateTo && v > dateTo) return false;
+      return true;
     });
-  }, [rows, statusFilter]);
+  }, [rows, statusFilter, dateField, dateFrom, dateTo]);
 
   const togglePago = async (r: Comissao) => {
     const novo = !r.pago;
@@ -107,15 +118,41 @@ export default function Comissoes() {
       />
 
       <Card className="mb-4">
-            <CardContent className="p-3">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas</SelectItem>
-                  <SelectItem value="aberto">Em aberto</SelectItem>
-                  <SelectItem value="pago">Pagas</SelectItem>
-                </SelectContent>
-              </Select>
+            <CardContent className="p-3 flex flex-wrap items-end gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">Status</Label>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas</SelectItem>
+                    <SelectItem value="aberto">Em aberto</SelectItem>
+                    <SelectItem value="pago">Pagas</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Filtrar por</Label>
+                <Select value={dateField} onValueChange={(v) => setDateField(v as any)}>
+                  <SelectTrigger className="w-[170px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="mes_previsto">Mês previsto</SelectItem>
+                    <SelectItem value="data_pagamento">Data de pagamento</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">De</Label>
+                <DatePicker value={dateFrom} onChange={setDateFrom} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Até</Label>
+                <DatePicker value={dateTo} onChange={setDateTo} />
+              </div>
+              {(dateFrom || dateTo) && (
+                <Button variant="ghost" size="sm" onClick={() => { setDateFrom(null); setDateTo(null); }}>
+                  <X className="h-4 w-4" /> Limpar período
+                </Button>
+              )}
             </CardContent>
           </Card>
 
