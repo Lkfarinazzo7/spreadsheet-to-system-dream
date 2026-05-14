@@ -133,6 +133,7 @@ export default function Pipeline() {
       numero_proposta: item.numero_proposta ?? null,
       observacoes: item.observacoes ?? null,
       status: "Ativo",
+      dados_proposta: (item as any).dados_proposta ?? null,
     });
     setPromoteOpen(true);
   };

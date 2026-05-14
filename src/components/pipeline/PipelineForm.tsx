@@ -18,6 +18,7 @@ import { maskPhone, getAge } from "@/lib/format";
 import { PipelineAnexos } from "./PipelineAnexos";
 import { ElaboracaoEmailDialog } from "./ElaboracaoEmailDialog";
 import { buildElaboracaoEmail } from "@/lib/elaboracaoEmail";
+import { buildAntecipacaoEmail } from "@/lib/antecipacaoEmail";
 
 type Lookup = { id: string; nome: string };
 
@@ -160,6 +161,7 @@ export function PipelineForm({
   const [parsing, setParsing] = useState(false);
   const [quickOpen, setQuickOpen] = useState(true);
   const [emailOpen, setEmailOpen] = useState(false);
+  const [antecipOpen, setAntecipOpen] = useState(false);
 
   useEffect(() => {
     setForm(
@@ -786,6 +788,14 @@ export function PipelineForm({
             >
               <Mail className="h-4 w-4" /> Gerar e-mail de elaboração
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setAntecipOpen(true)}
+              disabled={!form.cliente?.trim()}
+            >
+              <Mail className="h-4 w-4" /> E-mail de antecipação
+            </Button>
             {form.id && (
               <Button
                 type="button"
@@ -823,13 +833,23 @@ export function PipelineForm({
         {(() => {
           const opNome = operadoras.find((o) => o.id === form.operadora_id)?.nome;
           const { assunto, corpo } = buildElaboracaoEmail(form, opNome);
+          const ant = buildAntecipacaoEmail(form, opNome);
           return (
+            <>
             <ElaboracaoEmailDialog
               open={emailOpen}
               onOpenChange={setEmailOpen}
               assunto={assunto}
               corpo={corpo}
             />
+            <ElaboracaoEmailDialog
+              open={antecipOpen}
+              onOpenChange={setAntecipOpen}
+              assunto={ant.assunto}
+              corpo={ant.corpo}
+              titulo="E-mail de antecipação"
+            />
+            </>
           );
         })()}
       </DialogContent>

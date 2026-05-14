@@ -13,6 +13,8 @@ import { Separator } from "@/components/ui/separator";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MoneyInput } from "@/components/ui/money-input";
 import { ContratoAnexos } from "./ContratoAnexos";
+import { DadosPropostaEditor } from "@/components/shared/DadosPropostaEditor";
+import type { DadosProposta } from "@/components/pipeline/PipelineForm";
 
 type Lookup = { id: string; nome: string };
 
@@ -40,6 +42,7 @@ export type ContratoFormValues = {
   data_reajuste?: string | null;
   status: "Ativo" | "Cancelado" | "Pendente";
   observacoes?: string | null;
+  dados_proposta?: DadosProposta | null;
 };
 
 const empty: ContratoFormValues = {
@@ -189,6 +192,7 @@ export function ContratoForm({
         data_reajuste: form.data_reajuste || null,
         numero_proposta: form.numero_proposta || null,
         observacoes: form.observacoes || null,
+        dados_proposta: (form.dados_proposta ?? null) as any,
       };
 
       let contratoId = form.id;
@@ -300,6 +304,16 @@ export function ContratoForm({
 
           {form.id && (
             <div className="col-span-2 space-y-2">
+              <Separator />
+              <div>
+                <h3 className="font-semibold text-sm mb-2">Dados da proposta</h3>
+                <DadosPropostaEditor
+                  value={form.dados_proposta ?? { acomodacao: "", coparticipacao: "", titulares: [] }}
+                  onChange={(v) => set("dados_proposta", v)}
+                  operadoras={operadoras}
+                  tipo={form.tipo}
+                />
+              </div>
               <Separator />
               <ContratoAnexos contratoId={form.id} />
             </div>

@@ -146,7 +146,11 @@ export default function Contratos() {
                 <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-10">Nenhum contrato encontrado.</TableCell></TableRow>
               )}
               {filtered.map((r) => (
-                <TableRow key={r.id}>
+                <TableRow
+                  key={r.id}
+                  className="cursor-pointer"
+                  onClick={() => { setEditing(r as any); setOpen(true); }}
+                >
                   <TableCell className="font-medium">
                     {r.cliente}
                     {r.numero_proposta && <div className="text-xs text-muted-foreground">#{r.numero_proposta}</div>}
@@ -158,7 +162,7 @@ export default function Contratos() {
                   <TableCell>{formatDate(r.data_reajuste)}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatCurrency(r.valor_mensal)}</TableCell>
                   <TableCell><Badge variant={statusVariant(r.status) as any}>{r.status}</Badge></TableCell>
-                  <TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
                     <div className="flex gap-1 justify-end">
                       <Button size="icon" variant="ghost" onClick={() => { setEditing(r as any); setOpen(true); }}>
                         <Pencil className="h-4 w-4" />
