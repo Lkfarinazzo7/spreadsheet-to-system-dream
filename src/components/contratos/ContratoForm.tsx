@@ -13,6 +13,8 @@ import { Separator } from "@/components/ui/separator";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MoneyInput } from "@/components/ui/money-input";
 import { ContratoAnexos } from "./ContratoAnexos";
+import { DadosPropostaEditor } from "@/components/shared/DadosPropostaEditor";
+import type { DadosProposta } from "@/components/pipeline/PipelineForm";
 
 type Lookup = { id: string; nome: string };
 
@@ -40,6 +42,7 @@ export type ContratoFormValues = {
   data_reajuste?: string | null;
   status: "Ativo" | "Cancelado" | "Pendente";
   observacoes?: string | null;
+  dados_proposta?: DadosProposta | null;
 };
 
 const empty: ContratoFormValues = {
@@ -189,6 +192,7 @@ export function ContratoForm({
         data_reajuste: form.data_reajuste || null,
         numero_proposta: form.numero_proposta || null,
         observacoes: form.observacoes || null,
+        dados_proposta: (form.dados_proposta ?? null) as any,
       };
 
       let contratoId = form.id;
