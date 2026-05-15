@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Loader2, Upload, Download, Trash2, FileText, FileSpreadsheet,
   FileImage, File as FileIcon, Paperclip, ExternalLink, Archive,
@@ -43,6 +43,33 @@ function cleanName(n: string) {
   return n.replace(/^\d+-/, "");
 }
 
+function mimeTypeFromName(name: string) {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "pdf") return "application/pdf";
+  if (ext === "png") return "image/png";
+  if (["jpg", "jpeg"].includes(ext)) return "image/jpeg";
+  if (ext === "webp") return "image/webp";
+  if (ext === "gif") return "image/gif";
+  if (ext === "svg") return "image/svg+xml";
+  return "application/octet-stream";
+}
+
+function normalizeSignedUrl(url?: string) {
+  if (!url) return "";
+  if (/^https?:\/\//i.test(url)) return url;
+  return new URL(url, `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/`).toString();
+}
+
+function openUrlInNewTab(url: string) {
+  const link = document.createElement("a");
+  link.href = url;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
 async function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -67,7 +94,13 @@ export function PipelineAnexos({
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [zipping, setZipping] = useState(false);
-  const [viewer, setViewer] = useState<{ file: AnexoFile; url: string; downloadUrl: string } | null>(null);
+  const [viewer, setViewer] = useState<{
+    file: AnexoFile;
+    url: string;
+    downloadUrl: string;
+    kind: "pdf" | "image" | "other";
+    blob?: Blob;
+  } | null>(null);
   const [viewerError, setViewerError] = useState<string | null>(null);
   const [viewerLoading, setViewerLoading] = useState(false);
 
@@ -121,12 +154,13 @@ export function PipelineAnexos({
     setViewerError(null);
     setViewerLoading(true);
     // Abre o dialog imediatamente com placeholder para feedback visual.
-    setViewer({ file: f, url: "", downloadUrl: "" });
+    setViewer({ file: f, url: "", downloadUrl: "", kind: kindOf(f.name) });
     try {
       const { data: signed, error: signErr } = await supabase.storage
         .from("pipeline-anexos")
         .createSignedUrl(f.fullPath, 600);
-      if (signErr || !signed) {
+      const signedUrl = normalizeSignedUrl(signed?.signedUrl ?? (signed as { signedURL?: string } | null)?.signedURL);
+      if (signErr || !signedUrl) {
         throw new Error(signErr?.message || "Não foi possível gerar o link assinado do arquivo.");
       }
       const kind = kindOf(f.name);
@@ -140,13 +174,11 @@ export function PipelineAnexos({
         if (blob.size === 0) {
           throw new Error("Arquivo vazio ou corrompido (0 bytes).");
         }
-        const typed = kind === "pdf"
-          ? new Blob([blob], { type: "application/pdf" })
-          : blob;
+        const typed = new Blob([blob], { type: mimeTypeFromName(f.name) });
         const blobUrl = URL.createObjectURL(typed);
-        setViewer({ file: f, url: blobUrl, downloadUrl: signed.signedUrl });
+        setViewer({ file: f, url: blobUrl, downloadUrl: signedUrl, kind, blob: typed });
       } else {
-        setViewer({ file: f, url: signed.signedUrl, downloadUrl: signed.signedUrl });
+        setViewer({ file: f, url: signedUrl, downloadUrl: signedUrl, kind });
       }
     } catch (err: any) {
       console.error("[PipelineAnexos] openViewer error:", err);
@@ -196,6 +228,24 @@ export function PipelineAnexos({
   };
 
   const viewerKind = viewer ? kindOf(viewer.file.name) : "other";
+
+  const openViewerInNewTab = () => {
+    if (!viewer) return;
+
+    if (viewer.blob) {
+      const objectUrl = URL.createObjectURL(viewer.blob);
+      openUrlInNewTab(objectUrl);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      return;
+    }
+
+    if (!viewer.downloadUrl) {
+      setViewerError("Não foi possível gerar um link válido para abrir o arquivo em outra aba.");
+      return;
+    }
+
+    openUrlInNewTab(viewer.downloadUrl);
+  };
 
   const closeViewer = () => {
     setViewer(null);
@@ -272,6 +322,9 @@ export function PipelineAnexos({
             <DialogTitle className="text-sm truncate pr-2">
               {viewer ? cleanName(viewer.file.name) : ""}
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              Visualização do anexo com opções para baixar ou abrir em outra aba.
+            </DialogDescription>
             {viewer && (
               <div className="flex items-center gap-1">
                 <Button size="sm" variant="outline" onClick={() => downloadOne(viewer.file)} disabled={viewerLoading}>
@@ -280,8 +333,8 @@ export function PipelineAnexos({
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => viewer.downloadUrl && window.open(viewer.downloadUrl, "_blank")}
-                  disabled={!viewer.downloadUrl}
+                  onClick={openViewerInNewTab}
+                  disabled={viewerLoading || (!viewer.downloadUrl && !viewer.blob)}
                 >
                   <ExternalLink className="h-4 w-4" /> Nova aba
                 </Button>
@@ -306,12 +359,19 @@ export function PipelineAnexos({
               </div>
             )}
             {viewer && !viewerLoading && !viewerError && viewerKind === "pdf" && viewer.url && (
-              <iframe
-                src={viewer.url}
-                className="w-full h-full"
-                title={viewer.file.name}
-                onError={() => setViewerError("Falha ao renderizar o PDF no visualizador. Tente abrir em nova aba.")}
-              />
+              <object data={viewer.url} type="application/pdf" className="w-full h-full" aria-label={viewer.file.name}>
+                <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-center p-6">
+                  <FileText className="h-12 w-12 text-destructive" />
+                  <div className="text-sm font-medium text-destructive">O navegador não conseguiu renderizar este PDF</div>
+                  <div className="text-xs text-muted-foreground max-w-md break-words">
+                    O arquivo foi carregado, mas o preview embutido falhou. Tente abrir em nova aba ou baixar o arquivo.
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={openViewerInNewTab}>Abrir em nova aba</Button>
+                    <Button size="sm" variant="outline" onClick={() => downloadOne(viewer.file)}>Baixar arquivo</Button>
+                  </div>
+                </div>
+              </object>
             )}
             {viewer && !viewerLoading && !viewerError && viewerKind === "image" && viewer.url && (
               <div className="w-full h-full flex items-center justify-center overflow-auto p-4">
