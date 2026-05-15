@@ -370,20 +370,78 @@ export function PipelineAnexos({
                 </Button>
               </div>
             )}
-            {viewer && !viewerLoading && !viewerError && viewerKind === "pdf" && viewer.url && (
-              <object data={viewer.url} type="application/pdf" className="w-full h-full" aria-label={viewer.file.name}>
-                <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-center p-6">
-                  <FileText className="h-12 w-12 text-destructive" />
-                  <div className="text-sm font-medium text-destructive">O navegador não conseguiu renderizar este PDF</div>
-                  <div className="text-xs text-muted-foreground max-w-md break-words">
-                    O arquivo foi carregado, mas o preview embutido falhou. Tente abrir em nova aba ou baixar o arquivo.
+            {viewer && !viewerLoading && !viewerError && viewerKind === "pdf" && pdfFile && (
+              <div className="w-full h-full flex flex-col">
+                <div className="flex items-center justify-between gap-3 border-b px-4 py-2 bg-background/80">
+                  <div className="text-xs text-muted-foreground">
+                    {pdfPages > 0 ? `Página ${pdfPage} de ${pdfPages}` : "Preparando PDF..."}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button size="sm" variant="outline" onClick={openViewerInNewTab}>Abrir em nova aba</Button>
-                    <Button size="sm" variant="outline" onClick={() => downloadOne(viewer.file)}>Baixar arquivo</Button>
+                  {pdfPages > 1 && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className="h-8 w-8"
+                        onClick={() => setPdfPage((current) => Math.max(1, current - 1))}
+                        disabled={pdfPage <= 1}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className="h-8 w-8"
+                        onClick={() => setPdfPage((current) => Math.min(pdfPages, current + 1))}
+                        disabled={pdfPage >= pdfPages}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 overflow-auto p-4">
+                  <div className="mx-auto flex min-h-full w-fit items-start justify-center">
+                    <Document
+                      file={pdfFile}
+                      loading={
+                        <div className="flex min-h-[320px] items-center justify-center gap-3 text-muted-foreground">
+                          <Loader2 className="h-6 w-6 animate-spin" />
+                          <span className="text-sm">Renderizando PDF…</span>
+                        </div>
+                      }
+                      error={
+                        <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 text-center">
+                          <FileText className="h-12 w-12 text-destructive" />
+                          <div className="text-sm font-medium text-destructive">Não foi possível renderizar este PDF</div>
+                          <div className="text-xs text-muted-foreground max-w-md">
+                            O arquivo foi baixado, mas houve falha ao processar o preview dentro da plataforma.
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button size="sm" variant="outline" onClick={openViewerInNewTab}>Abrir em nova aba</Button>
+                            <Button size="sm" variant="outline" onClick={() => downloadOne(viewer.file)}>Baixar arquivo</Button>
+                          </div>
+                        </div>
+                      }
+                      onLoadSuccess={({ numPages }) => {
+                        setPdfPages(numPages);
+                        setPdfPage((current) => Math.min(current, numPages) || 1);
+                      }}
+                      onLoadError={(error) => {
+                        console.error("[PipelineAnexos] pdf render error:", error);
+                        setViewerError(`Falha ao processar o PDF para visualização: ${error.message}`);
+                      }}
+                    >
+                      <Page
+                        pageNumber={pdfPage}
+                        width={900}
+                        renderAnnotationLayer={false}
+                        renderTextLayer={false}
+                        className="shadow-sm"
+                      />
+                    </Document>
                   </div>
                 </div>
-              </object>
+              </div>
             )}
             {viewer && !viewerLoading && !viewerError && viewerKind === "image" && viewer.url && (
               <div className="w-full h-full flex items-center justify-center overflow-auto p-4">
