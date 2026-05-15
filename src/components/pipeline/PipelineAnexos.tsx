@@ -1,14 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Document, Page, pdfjs } from "react-pdf";
 import {
   Loader2, Upload, Download, Trash2, FileText, FileSpreadsheet,
-  FileImage, File as FileIcon, Paperclip, ExternalLink, Archive,
+  FileImage, File as FileIcon, Paperclip, ExternalLink, Archive, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import JSZip from "jszip";
+
+import "react-pdf/dist/Page/AnnotationLayer.css";
+
+pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
 
 type AnexoFile = {
   name: string;
@@ -43,6 +48,33 @@ function cleanName(n: string) {
   return n.replace(/^\d+-/, "");
 }
 
+function mimeTypeFromName(name: string) {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "pdf") return "application/pdf";
+  if (ext === "png") return "image/png";
+  if (["jpg", "jpeg"].includes(ext)) return "image/jpeg";
+  if (ext === "webp") return "image/webp";
+  if (ext === "gif") return "image/gif";
+  if (ext === "svg") return "image/svg+xml";
+  return "application/octet-stream";
+}
+
+function normalizeSignedUrl(url?: string) {
+  if (!url) return "";
+  if (/^https?:\/\//i.test(url)) return url;
+  return new URL(url, `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/`).toString();
+}
+
+function openUrlInNewTab(url: string) {
+  const link = document.createElement("a");
+  link.href = url;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
 async function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -67,9 +99,17 @@ export function PipelineAnexos({
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [zipping, setZipping] = useState(false);
-  const [viewer, setViewer] = useState<{ file: AnexoFile; url: string; downloadUrl: string } | null>(null);
+  const [viewer, setViewer] = useState<{
+    file: AnexoFile;
+    url: string;
+    downloadUrl: string;
+    kind: "pdf" | "image" | "other";
+    blob?: Blob;
+  } | null>(null);
   const [viewerError, setViewerError] = useState<string | null>(null);
   const [viewerLoading, setViewerLoading] = useState(false);
+  const [pdfPages, setPdfPages] = useState(0);
+  const [pdfPage, setPdfPage] = useState(1);
 
   const prefix = basePrefix ?? (user && pipelineId ? `${user.id}/${pipelineId}` : "");
 
@@ -120,13 +160,16 @@ export function PipelineAnexos({
   const openViewer = async (f: AnexoFile) => {
     setViewerError(null);
     setViewerLoading(true);
+    setPdfPage(1);
+    setPdfPages(0);
     // Abre o dialog imediatamente com placeholder para feedback visual.
-    setViewer({ file: f, url: "", downloadUrl: "" });
+    setViewer({ file: f, url: "", downloadUrl: "", kind: kindOf(f.name) });
     try {
       const { data: signed, error: signErr } = await supabase.storage
         .from("pipeline-anexos")
         .createSignedUrl(f.fullPath, 600);
-      if (signErr || !signed) {
+      const signedUrl = normalizeSignedUrl(signed?.signedUrl ?? (signed as { signedURL?: string } | null)?.signedURL);
+      if (signErr || !signedUrl) {
         throw new Error(signErr?.message || "Não foi possível gerar o link assinado do arquivo.");
       }
       const kind = kindOf(f.name);
@@ -140,13 +183,11 @@ export function PipelineAnexos({
         if (blob.size === 0) {
           throw new Error("Arquivo vazio ou corrompido (0 bytes).");
         }
-        const typed = kind === "pdf"
-          ? new Blob([blob], { type: "application/pdf" })
-          : blob;
+        const typed = new Blob([blob], { type: mimeTypeFromName(f.name) });
         const blobUrl = URL.createObjectURL(typed);
-        setViewer({ file: f, url: blobUrl, downloadUrl: signed.signedUrl });
+        setViewer({ file: f, url: blobUrl, downloadUrl: signedUrl, kind, blob: typed });
       } else {
-        setViewer({ file: f, url: signed.signedUrl, downloadUrl: signed.signedUrl });
+        setViewer({ file: f, url: signedUrl, downloadUrl: signedUrl, kind });
       }
     } catch (err: any) {
       console.error("[PipelineAnexos] openViewer error:", err);
@@ -196,11 +237,32 @@ export function PipelineAnexos({
   };
 
   const viewerKind = viewer ? kindOf(viewer.file.name) : "other";
+  const pdfFile = useMemo(() => (viewerKind === "pdf" && viewer?.blob ? viewer.blob : undefined), [viewer?.blob, viewerKind]);
+
+  const openViewerInNewTab = () => {
+    if (!viewer) return;
+
+    if (viewer.blob) {
+      const objectUrl = URL.createObjectURL(viewer.blob);
+      openUrlInNewTab(objectUrl);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      return;
+    }
+
+    if (!viewer.downloadUrl) {
+      setViewerError("Não foi possível gerar um link válido para abrir o arquivo em outra aba.");
+      return;
+    }
+
+    openUrlInNewTab(viewer.downloadUrl);
+  };
 
   const closeViewer = () => {
     setViewer(null);
     setViewerError(null);
     setViewerLoading(false);
+    setPdfPages(0);
+    setPdfPage(1);
   };
 
   return (
@@ -272,6 +334,9 @@ export function PipelineAnexos({
             <DialogTitle className="text-sm truncate pr-2">
               {viewer ? cleanName(viewer.file.name) : ""}
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              Visualização do anexo com opções para baixar ou abrir em outra aba.
+            </DialogDescription>
             {viewer && (
               <div className="flex items-center gap-1">
                 <Button size="sm" variant="outline" onClick={() => downloadOne(viewer.file)} disabled={viewerLoading}>
@@ -280,8 +345,8 @@ export function PipelineAnexos({
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => viewer.downloadUrl && window.open(viewer.downloadUrl, "_blank")}
-                  disabled={!viewer.downloadUrl}
+                  onClick={openViewerInNewTab}
+                  disabled={viewerLoading || (!viewer.downloadUrl && !viewer.blob)}
                 >
                   <ExternalLink className="h-4 w-4" /> Nova aba
                 </Button>
@@ -305,13 +370,78 @@ export function PipelineAnexos({
                 </Button>
               </div>
             )}
-            {viewer && !viewerLoading && !viewerError && viewerKind === "pdf" && viewer.url && (
-              <iframe
-                src={viewer.url}
-                className="w-full h-full"
-                title={viewer.file.name}
-                onError={() => setViewerError("Falha ao renderizar o PDF no visualizador. Tente abrir em nova aba.")}
-              />
+            {viewer && !viewerLoading && !viewerError && viewerKind === "pdf" && pdfFile && (
+              <div className="w-full h-full flex flex-col">
+                <div className="flex items-center justify-between gap-3 border-b px-4 py-2 bg-background/80">
+                  <div className="text-xs text-muted-foreground">
+                    {pdfPages > 0 ? `Página ${pdfPage} de ${pdfPages}` : "Preparando PDF..."}
+                  </div>
+                  {pdfPages > 1 && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className="h-8 w-8"
+                        onClick={() => setPdfPage((current) => Math.max(1, current - 1))}
+                        disabled={pdfPage <= 1}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className="h-8 w-8"
+                        onClick={() => setPdfPage((current) => Math.min(pdfPages, current + 1))}
+                        disabled={pdfPage >= pdfPages}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 overflow-auto p-4">
+                  <div className="mx-auto flex min-h-full w-fit items-start justify-center">
+                    <Document
+                      file={pdfFile}
+                      loading={
+                        <div className="flex min-h-[320px] items-center justify-center gap-3 text-muted-foreground">
+                          <Loader2 className="h-6 w-6 animate-spin" />
+                          <span className="text-sm">Renderizando PDF…</span>
+                        </div>
+                      }
+                      error={
+                        <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 text-center">
+                          <FileText className="h-12 w-12 text-destructive" />
+                          <div className="text-sm font-medium text-destructive">Não foi possível renderizar este PDF</div>
+                          <div className="text-xs text-muted-foreground max-w-md">
+                            O arquivo foi baixado, mas houve falha ao processar o preview dentro da plataforma.
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button size="sm" variant="outline" onClick={openViewerInNewTab}>Abrir em nova aba</Button>
+                            <Button size="sm" variant="outline" onClick={() => downloadOne(viewer.file)}>Baixar arquivo</Button>
+                          </div>
+                        </div>
+                      }
+                      onLoadSuccess={({ numPages }) => {
+                        setPdfPages(numPages);
+                        setPdfPage((current) => Math.min(current, numPages) || 1);
+                      }}
+                      onLoadError={(error) => {
+                        console.error("[PipelineAnexos] pdf render error:", error);
+                        setViewerError(`Falha ao processar o PDF para visualização: ${error.message}`);
+                      }}
+                    >
+                      <Page
+                        pageNumber={pdfPage}
+                        width={900}
+                        renderAnnotationLayer={false}
+                        renderTextLayer={false}
+                        className="shadow-sm"
+                      />
+                    </Document>
+                  </div>
+                </div>
+              </div>
             )}
             {viewer && !viewerLoading && !viewerError && viewerKind === "image" && viewer.url && (
               <div className="w-full h-full flex items-center justify-center overflow-auto p-4">
