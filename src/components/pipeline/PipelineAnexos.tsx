@@ -1,14 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Document, Page, pdfjs } from "react-pdf";
 import {
   Loader2, Upload, Download, Trash2, FileText, FileSpreadsheet,
-  FileImage, File as FileIcon, Paperclip, ExternalLink, Archive,
+  FileImage, File as FileIcon, Paperclip, ExternalLink, Archive, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import JSZip from "jszip";
+
+import "react-pdf/dist/Page/AnnotationLayer.css";
+
+pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
 
 type AnexoFile = {
   name: string;
@@ -103,6 +108,8 @@ export function PipelineAnexos({
   } | null>(null);
   const [viewerError, setViewerError] = useState<string | null>(null);
   const [viewerLoading, setViewerLoading] = useState(false);
+  const [pdfPages, setPdfPages] = useState(0);
+  const [pdfPage, setPdfPage] = useState(1);
 
   const prefix = basePrefix ?? (user && pipelineId ? `${user.id}/${pipelineId}` : "");
 
@@ -153,6 +160,8 @@ export function PipelineAnexos({
   const openViewer = async (f: AnexoFile) => {
     setViewerError(null);
     setViewerLoading(true);
+    setPdfPage(1);
+    setPdfPages(0);
     // Abre o dialog imediatamente com placeholder para feedback visual.
     setViewer({ file: f, url: "", downloadUrl: "", kind: kindOf(f.name) });
     try {
@@ -228,6 +237,7 @@ export function PipelineAnexos({
   };
 
   const viewerKind = viewer ? kindOf(viewer.file.name) : "other";
+  const pdfFile = useMemo(() => (viewerKind === "pdf" && viewer?.blob ? viewer.blob : undefined), [viewer?.blob, viewerKind]);
 
   const openViewerInNewTab = () => {
     if (!viewer) return;
@@ -251,6 +261,8 @@ export function PipelineAnexos({
     setViewer(null);
     setViewerError(null);
     setViewerLoading(false);
+    setPdfPages(0);
+    setPdfPage(1);
   };
 
   return (
