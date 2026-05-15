@@ -68,6 +68,8 @@ export function PipelineAnexos({
   const [uploading, setUploading] = useState(false);
   const [zipping, setZipping] = useState(false);
   const [viewer, setViewer] = useState<{ file: AnexoFile; url: string; downloadUrl: string } | null>(null);
+  const [viewerError, setViewerError] = useState<string | null>(null);
+  const [viewerLoading, setViewerLoading] = useState(false);
 
   const prefix = basePrefix ?? (user && pipelineId ? `${user.id}/${pipelineId}` : "");
 
@@ -116,32 +118,42 @@ export function PipelineAnexos({
   };
 
   const openViewer = async (f: AnexoFile) => {
-    const { data: signed, error: signErr } = await supabase.storage
-      .from("pipeline-anexos")
-      .createSignedUrl(f.fullPath, 600);
-    if (signErr || !signed) {
-      toast({ title: "Erro ao gerar link", variant: "destructive" });
-      return;
-    }
-    const kind = kindOf(f.name);
-    // Para PDFs/imagens, baixamos e geramos um blob URL (evita bloqueio do Chrome ao
-    // renderizar PDFs assinados de outra origem dentro de um iframe).
-    if (kind === "pdf" || kind === "image") {
-      const { data: blob, error: dlErr } = await supabase.storage
+    setViewerError(null);
+    setViewerLoading(true);
+    // Abre o dialog imediatamente com placeholder para feedback visual.
+    setViewer({ file: f, url: "", downloadUrl: "" });
+    try {
+      const { data: signed, error: signErr } = await supabase.storage
         .from("pipeline-anexos")
-        .download(f.fullPath);
-      if (dlErr || !blob) {
-        toast({ title: "Erro ao carregar arquivo", variant: "destructive" });
-        return;
+        .createSignedUrl(f.fullPath, 600);
+      if (signErr || !signed) {
+        throw new Error(signErr?.message || "Não foi possível gerar o link assinado do arquivo.");
       }
-      const typed = kind === "pdf"
-        ? new Blob([blob], { type: "application/pdf" })
-        : blob;
-      const blobUrl = URL.createObjectURL(typed);
-      setViewer({ file: f, url: blobUrl, downloadUrl: signed.signedUrl });
-      return;
+      const kind = kindOf(f.name);
+      if (kind === "pdf" || kind === "image") {
+        const { data: blob, error: dlErr } = await supabase.storage
+          .from("pipeline-anexos")
+          .download(f.fullPath);
+        if (dlErr || !blob) {
+          throw new Error(dlErr?.message || "Falha ao baixar o arquivo do storage.");
+        }
+        if (blob.size === 0) {
+          throw new Error("Arquivo vazio ou corrompido (0 bytes).");
+        }
+        const typed = kind === "pdf"
+          ? new Blob([blob], { type: "application/pdf" })
+          : blob;
+        const blobUrl = URL.createObjectURL(typed);
+        setViewer({ file: f, url: blobUrl, downloadUrl: signed.signedUrl });
+      } else {
+        setViewer({ file: f, url: signed.signedUrl, downloadUrl: signed.signedUrl });
+      }
+    } catch (err: any) {
+      console.error("[PipelineAnexos] openViewer error:", err);
+      setViewerError(err?.message || "Erro desconhecido ao abrir o arquivo.");
+    } finally {
+      setViewerLoading(false);
     }
-    setViewer({ file: f, url: signed.signedUrl, downloadUrl: signed.signedUrl });
   };
 
   // Libera o blob URL quando o visualizador é fechado.
@@ -184,6 +196,12 @@ export function PipelineAnexos({
   };
 
   const viewerKind = viewer ? kindOf(viewer.file.name) : "other";
+
+  const closeViewer = () => {
+    setViewer(null);
+    setViewerError(null);
+    setViewerLoading(false);
+  };
 
   return (
     <div className="rounded-lg border bg-card">
@@ -248,7 +266,7 @@ export function PipelineAnexos({
         </ul>
       </div>
 
-      <Dialog open={!!viewer} onOpenChange={(v) => !v && setViewer(null)}>
+      <Dialog open={!!viewer} onOpenChange={(v) => !v && closeViewer()}>
         <DialogContent className="max-w-5xl w-[95vw] h-[88vh] p-0 flex flex-col gap-0">
           <DialogHeader className="px-4 py-2 border-b flex-row items-center justify-between space-y-0">
             <DialogTitle className="text-sm truncate pr-2">
@@ -256,25 +274,56 @@ export function PipelineAnexos({
             </DialogTitle>
             {viewer && (
               <div className="flex items-center gap-1">
-                <Button size="sm" variant="outline" onClick={() => downloadOne(viewer.file)}>
+                <Button size="sm" variant="outline" onClick={() => downloadOne(viewer.file)} disabled={viewerLoading}>
                   <Download className="h-4 w-4" /> Baixar
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => window.open(viewer.downloadUrl, "_blank")}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => viewer.downloadUrl && window.open(viewer.downloadUrl, "_blank")}
+                  disabled={!viewer.downloadUrl}
+                >
                   <ExternalLink className="h-4 w-4" /> Nova aba
                 </Button>
               </div>
             )}
           </DialogHeader>
           <div className="flex-1 bg-muted overflow-hidden">
-            {viewer && viewerKind === "pdf" && (
-              <iframe src={viewer.url} className="w-full h-full" title={viewer.file.name} />
-            )}
-            {viewer && viewerKind === "image" && (
-              <div className="w-full h-full flex items-center justify-center overflow-auto p-4">
-                <img src={viewer.url} alt={viewer.file.name} className="max-w-full max-h-full object-contain" />
+            {viewer && viewerLoading && (
+              <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-muted-foreground">
+                <Loader2 className="h-8 w-8 animate-spin" />
+                <div className="text-sm">Carregando arquivo…</div>
               </div>
             )}
-            {viewer && viewerKind === "other" && (
+            {viewer && !viewerLoading && viewerError && (
+              <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-center p-6">
+                <FileIcon className="h-12 w-12 text-destructive" />
+                <div className="text-sm font-medium text-destructive">Não foi possível abrir o arquivo</div>
+                <div className="text-xs text-muted-foreground max-w-md break-words">{viewerError}</div>
+                <Button size="sm" variant="outline" onClick={() => openViewer(viewer.file)}>
+                  Tentar novamente
+                </Button>
+              </div>
+            )}
+            {viewer && !viewerLoading && !viewerError && viewerKind === "pdf" && viewer.url && (
+              <iframe
+                src={viewer.url}
+                className="w-full h-full"
+                title={viewer.file.name}
+                onError={() => setViewerError("Falha ao renderizar o PDF no visualizador. Tente abrir em nova aba.")}
+              />
+            )}
+            {viewer && !viewerLoading && !viewerError && viewerKind === "image" && viewer.url && (
+              <div className="w-full h-full flex items-center justify-center overflow-auto p-4">
+                <img
+                  src={viewer.url}
+                  alt={viewer.file.name}
+                  className="max-w-full max-h-full object-contain"
+                  onError={() => setViewerError("Falha ao carregar a imagem.")}
+                />
+              </div>
+            )}
+            {viewer && !viewerLoading && !viewerError && viewerKind === "other" && (
               <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-center p-6">
                 <FileIcon className="h-12 w-12 text-muted-foreground" />
                 <div className="text-sm text-muted-foreground max-w-md">
