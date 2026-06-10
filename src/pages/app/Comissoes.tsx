@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -13,7 +13,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { Plus, Check, Trash2, X } from "lucide-react";
+import { Plus, Check, Trash2, X, ChevronLeft, ChevronRight } from "lucide-react";
 
 type Comissao = {
   id: string;
@@ -36,6 +36,8 @@ export default function Comissoes() {
   const [dateField, setDateField] = useState<"mes_previsto" | "data_pagamento">("mes_previsto");
   const [dateFrom, setDateFrom] = useState<string | null>(null);
   const [dateTo, setDateTo] = useState<string | null>(null);
+  const [year, setYear] = useState<number>(new Date().getFullYear());
+  const [activeMonth, setActiveMonth] = useState<number | null>(null);
   const [form, setForm] = useState<Partial<Comissao>>({ parcela: 1, tipo: "Bancaria", valor: 0, pago: false });
 
   const load = async () => {
@@ -69,6 +71,30 @@ export default function Comissoes() {
       return true;
     });
   }, [rows, statusFilter, dateField, dateFrom, dateTo]);
+
+  const totals = useMemo(() => {
+    let total = 0, pago = 0, aberto = 0;
+    for (const r of filtered) {
+      const v = Number(r.valor) || 0;
+      total += v;
+      if (r.pago) pago += v; else aberto += v;
+    }
+    return { total, pago, aberto };
+  }, [filtered]);
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const selectMonth = (y: number, m: number) => {
+    const last = new Date(y, m, 0).getDate();
+    setDateFrom(`${y}-${pad(m)}-01`);
+    setDateTo(`${y}-${pad(m)}-${pad(last)}`);
+    setActiveMonth(m);
+  };
+  const clearPeriodo = () => {
+    setDateFrom(null);
+    setDateTo(null);
+    setActiveMonth(null);
+  };
+  const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
 
   const togglePago = async (r: Comissao) => {
     const novo = !r.pago;
@@ -149,10 +175,40 @@ export default function Comissoes() {
                 <DatePicker value={dateTo} onChange={setDateTo} />
               </div>
               {(dateFrom || dateTo) && (
-                <Button variant="ghost" size="sm" onClick={() => { setDateFrom(null); setDateTo(null); }}>
+                <Button variant="ghost" size="sm" onClick={clearPeriodo}>
                   <X className="h-4 w-4" /> Limpar período
                 </Button>
               )}
+            </CardContent>
+            <CardContent className="p-3 pt-0 flex flex-wrap items-center gap-2 border-t">
+              <div className="flex items-center gap-1 mr-2">
+                <Button variant="ghost" size="icon" onClick={() => setYear((y) => y - 1)}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="text-sm font-medium tabular-nums w-12 text-center">{year}</span>
+                <Button variant="ghost" size="icon" onClick={() => setYear((y) => y + 1)}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+              {MESES.map((nome, idx) => {
+                const m = idx + 1;
+                const active = activeMonth === m && dateFrom?.startsWith(`${year}-${pad(m)}`);
+                return (
+                  <Button
+                    key={m}
+                    size="sm"
+                    variant={active ? "default" : "outline"}
+                    onClick={() => selectMonth(year, m)}
+                  >
+                    {nome}
+                  </Button>
+                );
+              })}
+              <div className="ml-auto flex flex-wrap gap-3 text-sm">
+                <span className="text-muted-foreground">Em aberto: <strong className="text-foreground tabular-nums">{formatCurrency(totals.aberto)}</strong></span>
+                <span className="text-muted-foreground">Pago: <strong className="text-success tabular-nums">{formatCurrency(totals.pago)}</strong></span>
+                <span className="text-muted-foreground">Total: <strong className="text-foreground tabular-nums">{formatCurrency(totals.total)}</strong></span>
+              </div>
             </CardContent>
           </Card>
 
@@ -203,6 +259,15 @@ export default function Comissoes() {
                     </TableRow>
                   ))}
                 </TableBody>
+                <TableFooter>
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-right font-medium">Total filtrado</TableCell>
+                    <TableCell className="text-right tabular-nums font-semibold">{formatCurrency(totals.total)}</TableCell>
+                    <TableCell colSpan={2} className="text-xs text-muted-foreground">
+                      Pago: <span className="text-success font-medium">{formatCurrency(totals.pago)}</span> · Aberto: <span className="text-foreground font-medium">{formatCurrency(totals.aberto)}</span>
+                    </TableCell>
+                  </TableRow>
+                </TableFooter>
               </Table>
             </CardContent>
           </Card>
