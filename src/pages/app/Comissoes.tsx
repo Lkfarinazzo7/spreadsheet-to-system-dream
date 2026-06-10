@@ -94,7 +94,16 @@ export default function Comissoes() {
     setDateTo(null);
     setActiveMonth(null);
   };
-  const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+  const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  const currentMonth = activeMonth ?? (new Date().getMonth() + 1);
+  const stepMonth = (delta: number) => {
+    let m = currentMonth + delta;
+    let y = year;
+    if (m > 12) { m = 1; y += 1; }
+    if (m < 1) { m = 12; y -= 1; }
+    setYear(y);
+    selectMonth(y, m);
+  };
 
   const togglePago = async (r: Comissao) => {
     const novo = !r.pago;
@@ -181,29 +190,31 @@ export default function Comissoes() {
               )}
             </CardContent>
             <CardContent className="p-3 pt-0 flex flex-wrap items-center gap-2 border-t">
-              <div className="flex items-center gap-1 mr-2">
-                <Button variant="ghost" size="icon" onClick={() => setYear((y) => y - 1)}>
+              <div className="inline-flex items-center border rounded-md">
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => stepMonth(-1)}>
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <span className="text-sm font-medium tabular-nums w-12 text-center">{year}</span>
-                <Button variant="ghost" size="icon" onClick={() => setYear((y) => y + 1)}>
+                <span className="text-sm font-medium w-24 text-center select-none">
+                  {MESES[currentMonth - 1]}
+                </span>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => stepMonth(1)}>
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
-              {MESES.map((nome, idx) => {
-                const m = idx + 1;
-                const active = activeMonth === m && dateFrom?.startsWith(`${year}-${pad(m)}`);
-                return (
-                  <Button
-                    key={m}
-                    size="sm"
-                    variant={active ? "default" : "outline"}
-                    onClick={() => selectMonth(year, m)}
-                  >
-                    {nome}
-                  </Button>
-                );
-              })}
+              <div className="inline-flex items-center border rounded-md">
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { const y = year - 1; setYear(y); if (activeMonth) selectMonth(y, activeMonth); }}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="text-sm font-medium tabular-nums w-14 text-center select-none">{year}</span>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { const y = year + 1; setYear(y); if (activeMonth) selectMonth(y, activeMonth); }}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+              {activeMonth && (
+                <Button variant="ghost" size="sm" onClick={clearPeriodo}>
+                  <X className="h-4 w-4" /> Limpar
+                </Button>
+              )}
               <div className="ml-auto flex flex-wrap gap-3 text-sm">
                 <span className="text-muted-foreground">Em aberto: <strong className="text-foreground tabular-nums">{formatCurrency(totals.aberto)}</strong></span>
                 <span className="text-muted-foreground">Pago: <strong className="text-success tabular-nums">{formatCurrency(totals.pago)}</strong></span>
