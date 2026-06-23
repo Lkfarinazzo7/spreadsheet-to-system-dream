@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -110,45 +110,68 @@ export function PipelineAnexos({
   const [viewerLoading, setViewerLoading] = useState(false);
   const [pdfPages, setPdfPages] = useState(0);
   const [pdfPage, setPdfPage] = useState(1);
+  const loadRequestRef = useRef(0);
 
   const prefix = basePrefix ?? (user && pipelineId ? `${user.id}/${pipelineId}` : "");
+  const activePrefixRef = useRef(prefix);
+  activePrefixRef.current = prefix;
 
-  const load = async () => {
-    if (!user) return;
+  useEffect(() => {
+    setFiles([]);
+    setViewer(null);
+    setViewerError(null);
+    setViewerLoading(false);
+    setPdfPages(0);
+    setPdfPage(1);
+  }, [prefix]);
+
+  const load = useCallback(async () => {
+    const currentPrefix = prefix;
+    const requestId = ++loadRequestRef.current;
+    if (!user || !currentPrefix) {
+      setFiles([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const { data, error } = await supabase.storage
       .from("pipeline-anexos")
-      .list(prefix, { limit: 100, sortBy: { column: "updated_at", order: "desc" } });
+      .list(currentPrefix, { limit: 100, sortBy: { column: "updated_at", order: "desc" } });
+
+    if (requestId !== loadRequestRef.current || activePrefixRef.current !== currentPrefix) {
+      return;
+    }
+
     setLoading(false);
     if (error) { console.error(error); return; }
     setFiles(
       (data ?? []).map((f) => ({
         name: f.name,
-        fullPath: `${prefix}/${f.name}`,
+        fullPath: `${currentPrefix}/${f.name}`,
         size: (f as any).metadata?.size ?? 0,
         updated_at: (f as any).updated_at,
       })),
     );
-  };
+  }, [prefix, user]);
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefix, user?.id]);
+  }, [load]);
 
   const onUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const list = e.target.files;
-    if (!list || !list.length || !user) return;
+    if (!list || !list.length || !user || !prefix) return;
+    const uploadPrefix = prefix;
     setUploading(true);
     try {
       for (const file of Array.from(list)) {
         const safe = file.name.replace(/[^\w.\-]+/g, "_");
-        const path = `${prefix}/${Date.now()}-${safe}`;
+        const path = `${uploadPrefix}/${Date.now()}-${crypto.randomUUID()}-${safe}`;
         const { error } = await supabase.storage.from("pipeline-anexos").upload(path, file);
         if (error) throw error;
       }
       toast({ title: "Arquivos enviados" });
-      await load();
+      if (activePrefixRef.current === uploadPrefix) await load();
     } catch (err: any) {
       toast({ title: "Erro no upload", description: err.message, variant: "destructive" });
     } finally {
@@ -280,8 +303,8 @@ export function PipelineAnexos({
             </Button>
           )}
           <label>
-            <input type="file" multiple className="hidden" onChange={onUpload} disabled={uploading} />
-            <Button asChild size="sm" variant="outline" disabled={uploading}>
+            <input type="file" multiple className="hidden" onChange={onUpload} disabled={uploading || !prefix} />
+            <Button asChild size="sm" variant="outline" disabled={uploading || !prefix}>
               <span className="cursor-pointer">
                 {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                 {uploading ? "Enviando..." : "Adicionar"}

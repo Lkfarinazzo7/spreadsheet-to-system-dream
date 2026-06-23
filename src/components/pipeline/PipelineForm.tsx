@@ -775,7 +775,7 @@ export function PipelineForm({
           {form.id && (
             <div className="space-y-2">
               <Separator />
-              <PipelineAnexos pipelineId={form.id} />
+              <PipelineAnexos key={form.id} pipelineId={form.id} />
             </div>
           )}
 
