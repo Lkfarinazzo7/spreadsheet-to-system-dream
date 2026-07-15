@@ -12,7 +12,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, localIso } from "@/lib/format";
 import { Plus, Check, Trash2, X, ChevronLeft, ChevronRight } from "lucide-react";
 
 type Comissao = {
@@ -109,7 +109,7 @@ export default function Comissoes() {
     const novo = !r.pago;
     const { error } = await supabase
       .from("comissoes")
-      .update({ pago: novo, data_pagamento: novo ? new Date().toISOString().slice(0, 10) : null })
+      .update({ pago: novo, data_pagamento: novo ? localIso() : null })
       .eq("id", r.id);
     if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
     load();

@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, localIso } from "@/lib/format";
 import { Wallet, CircleDollarSign, TrendingUp, ChevronLeft, ChevronRight, CalendarRange } from "lucide-react";
 import { Hash } from "lucide-react";
 import {
@@ -46,7 +46,7 @@ const MONTHS_PT = [
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
 ];
 
-const fmtIso = (d: Date) => d.toISOString().slice(0, 10);
+const fmtIso = (d: Date) => localIso(d);
 const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
 const endOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth() + 1, 0);
 
