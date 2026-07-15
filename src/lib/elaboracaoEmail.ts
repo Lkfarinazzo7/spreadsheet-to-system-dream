@@ -22,10 +22,8 @@ export function buildElaboracaoEmail(
   const titular = titulares[0];
   const op = operadoraNome ?? "";
 
-  const titularNome = titular?.nome || form.cliente || "";
-  const titularCpf = onlyDigits(titular?.cpf) || onlyDigits(dp.cnpj_cpf);
-
-  const assunto = `Elaboração ${op} ${titularNome} ${titularCpf}`.trim().replace(/\s+/g, " ");
+  const nomePrincipal = form.cliente || titular?.nome || "";
+  const assunto = `Elaboração ${op} ${nomePrincipal}`.trim().replace(/\s+/g, " ");
 
   const linhas: string[] = [];
   linhas.push(assunto);
@@ -79,9 +77,6 @@ export function buildElaboracaoEmail(
       });
     });
   }
-
-  linhas.push("");
-  linhas.push(form.observacoes?.trim() || "Obs: A declaração de permanência ficará pronta em 2 dias úteis");
 
   return { assunto, corpo: linhas.join("\n") };
 }
