@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { DndContext, DragEndEvent, PointerSensor, TouchSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -59,7 +59,10 @@ export default function Pipeline() {
   const [promoting, setPromoting] = useState<PipelineItem | null>(null);
   const [promoteInitial, setPromoteInitial] = useState<ContratoFormValues | null>(null);
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 120, tolerance: 6 } }),
+  );
 
   const load = async () => {
     const { data, error } = await supabase
@@ -101,14 +104,8 @@ export default function Pipeline() {
     for (const it of filtered) {
       if (map[it.etapa]) map[it.etapa].push(it);
     }
-    // Ordena urgentes (revisão hoje/atrasada) primeiro dentro de cada etapa
-    for (const e of ETAPAS) {
-      map[e].sort((a, b) => {
-        const au = a.data_revisao && a.data_revisao <= today ? 0 : 1;
-        const bu = b.data_revisao && b.data_revisao <= today ? 0 : 1;
-        return au - bu;
-      });
-    }
+    // Preserva a ordem retornada pelo banco (posicao). Urgência é destacada
+    // visualmente no cartão — não reordenamos aqui para não "pular" após o drop.
     return map;
   }, [items, onlyRevisar]);
 
@@ -177,10 +174,24 @@ export default function Pipeline() {
       return;
     }
 
-    setItems((p) => p.map((i) => (i.id === id ? { ...i, etapa: newEtapa } : i)));
+    // Nova posição: final da coluna de destino (max + 1) para o cartão ficar
+    // exatamente onde foi solto após o reload ordenado por `posicao`.
+    const posDestino =
+      Math.max(
+        0,
+        ...items
+          .filter((i) => i.etapa === newEtapa)
+          .map((i) => Number((i as any).posicao ?? 0)),
+      ) + 1;
+
+    setItems((p) =>
+      p.map((i) =>
+        i.id === id ? { ...i, etapa: newEtapa, ...( { posicao: posDestino } as any) } : i,
+      ),
+    );
     const { error } = await supabase
       .from("pipeline_contratos")
-      .update({ etapa: newEtapa as any })
+      .update({ etapa: newEtapa as any, posicao: posDestino })
       .eq("id", id);
     if (error) {
       toast({ title: "Erro ao mover", description: error.message, variant: "destructive" });
