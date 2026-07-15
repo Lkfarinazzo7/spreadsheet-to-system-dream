@@ -93,25 +93,57 @@ export function ContratoForm({
   const [comissoes, setComissoes] = useState<ComissaoLine[]>([]);
   const [removedComissoes, setRemovedComissoes] = useState<string[]>([]);
 
-  // Reset on open
+  // Reset only when the dialog transitions from closed to open, to avoid
+  // clobbering user edits on unrelated re-renders.
   useEffect(() => {
+    if (!open) return;
     setForm(initial ?? empty);
     setRemovedComissoes([]);
     if (!initial?.id) {
       setComissoes(defaultComissoes());
     }
-  }, [initial, open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const [lookupsLoaded, setLookupsLoaded] = useState(false);
 
   // Load lookups + existing comissões
   useEffect(() => {
     if (!open) return;
+    setLookupsLoaded(false);
     (async () => {
+      // Load all (active + inactive) so we can always display the current
+      // selection, even if the linked operadora/canal was later disabled.
       const [o, c] = await Promise.all([
-        supabase.from("operadoras").select("id,nome").eq("ativo", true).order("nome"),
-        supabase.from("canais_venda").select("id,nome").eq("ativo", true).order("nome"),
+        supabase.from("operadoras").select("id,nome,ativo").order("nome"),
+        supabase.from("canais_venda").select("id,nome,ativo").order("nome"),
       ]);
-      setOperadoras((o.data as any) ?? []);
-      setCanais((c.data as any) ?? []);
+      let ops: Lookup[] = ((o.data as any) ?? []) as Lookup[];
+      let cns: Lookup[] = ((c.data as any) ?? []) as Lookup[];
+
+      // Safety net: if the initial id is not in the returned rows for any
+      // reason (RLS edge case, etc.), fetch just that row so the Select can
+      // render the current value instead of falling back to a blank state.
+      if (initial?.operadora_id && !ops.some((r) => r.id === initial.operadora_id)) {
+        const { data } = await supabase
+          .from("operadoras")
+          .select("id,nome")
+          .eq("id", initial.operadora_id)
+          .maybeSingle();
+        if (data) ops = [...ops, data as any];
+      }
+      if (initial?.canal_id && !cns.some((r) => r.id === initial.canal_id)) {
+        const { data } = await supabase
+          .from("canais_venda")
+          .select("id,nome")
+          .eq("id", initial.canal_id)
+          .maybeSingle();
+        if (data) cns = [...cns, data as any];
+      }
+
+      setOperadoras(ops);
+      setCanais(cns);
+      setLookupsLoaded(true);
 
       if (initial?.id) {
         const { data } = await supabase
@@ -265,8 +297,14 @@ export function ContratoForm({
           </div>
           <div className="space-y-1.5">
             <Label>Operadora</Label>
-            <Select value={form.operadora_id ?? ""} onValueChange={(v) => set("operadora_id", v)}>
-              <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+            <Select
+              value={form.operadora_id ?? ""}
+              onValueChange={(v) => set("operadora_id", v)}
+              disabled={!lookupsLoaded}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={lookupsLoaded ? "Selecione" : "Carregando..."} />
+              </SelectTrigger>
               <SelectContent>
                 {operadoras.map((o) => (<SelectItem key={o.id} value={o.id}>{o.nome}</SelectItem>))}
               </SelectContent>
@@ -274,8 +312,14 @@ export function ContratoForm({
           </div>
           <div className="space-y-1.5">
             <Label>Canal de venda</Label>
-            <Select value={form.canal_id ?? ""} onValueChange={(v) => set("canal_id", v)}>
-              <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+            <Select
+              value={form.canal_id ?? ""}
+              onValueChange={(v) => set("canal_id", v)}
+              disabled={!lookupsLoaded}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={lookupsLoaded ? "Selecione" : "Carregando..."} />
+              </SelectTrigger>
               <SelectContent>
                 {canais.map((o) => (<SelectItem key={o.id} value={o.id}>{o.nome}</SelectItem>))}
               </SelectContent>
