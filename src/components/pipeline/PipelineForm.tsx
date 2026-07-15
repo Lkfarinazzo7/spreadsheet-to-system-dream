@@ -388,14 +388,14 @@ export function PipelineForm({
         data_vigencia: form.data_vigencia || null,
         numero_proposta: form.numero_proposta?.trim() || null,
         observacoes: form.observacoes?.trim() || null,
-        posicao: Date.now(),
         dados_proposta: form.dados_proposta as any,
       };
       (payload as any).data_revisao = form.data_revisao || null;
 
+      // `posicao` só é definida na criação; em edição o cartão mantém o lugar na coluna.
       const { error } = form.id
         ? await supabase.from("pipeline_contratos").update(payload).eq("id", form.id)
-        : await supabase.from("pipeline_contratos").insert(payload);
+        : await supabase.from("pipeline_contratos").insert({ ...payload, posicao: Date.now() });
 
       if (error) throw error;
 

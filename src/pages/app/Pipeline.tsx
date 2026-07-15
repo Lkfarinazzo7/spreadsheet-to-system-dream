@@ -12,7 +12,7 @@ import { PipelineForm, PipelineFormValues } from "@/components/pipeline/Pipeline
 import { ContratoForm, ContratoFormValues } from "@/components/contratos/ContratoForm";
 import { PipelineImportDialog } from "@/components/pipeline/PipelineImportDialog";
 import { DeclinadasDialog } from "@/components/pipeline/DeclinadasDialog";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, localIso } from "@/lib/format";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Ban } from "lucide-react";
@@ -97,7 +97,7 @@ export default function Pipeline() {
   const grouped = useMemo(() => {
     const map: Record<string, PipelineItem[]> = {};
     for (const e of ETAPAS) map[e] = [];
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localIso();
     const filtered = onlyRevisar
       ? items.filter((i) => i.data_revisao && i.data_revisao <= today)
       : items;
@@ -110,7 +110,7 @@ export default function Pipeline() {
   }, [items, onlyRevisar]);
 
   const totalGeral = useMemo(() => items.reduce((s, i) => s + Number(i.valor_mensal || 0), 0), [items]);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localIso();
   const revisarHoje = useMemo(
     () => items.filter((i) => i.data_revisao && i.data_revisao <= today).length,
     [items, today],
@@ -137,27 +137,55 @@ export default function Pipeline() {
 
   const onContratoSaved = async (contratoId?: string) => {
     if (!promoting) return;
-    // Move pipeline attachments to contratos folder so the user keeps access.
+    // Move os anexos do pipeline para a pasta de contratos. Se QUALQUER movimentação
+    // falhar, o cartão é mantido no pipeline para nova tentativa — nunca perdemos anexo.
+    let falhasMover = 0;
     if (contratoId && user) {
-      try {
-        const oldPrefix = `${user.id}/${promoting.id}`;
-        const newPrefix = `${user.id}/contratos/${contratoId}`;
-        const { data: files } = await supabase.storage
-          .from("pipeline-anexos")
-          .list(oldPrefix, { limit: 1000 });
+      const oldPrefix = `${user.id}/${promoting.id}`;
+      const newPrefix = `${user.id}/contratos/${contratoId}`;
+      const { data: files, error: listError } = await supabase.storage
+        .from("pipeline-anexos")
+        .list(oldPrefix, { limit: 1000 });
+      if (listError) {
+        falhasMover = -1; // não foi possível nem listar
+      } else {
         for (const f of files ?? []) {
-          await supabase.storage
+          const { error: moveError } = await supabase.storage
             .from("pipeline-anexos")
             .move(`${oldPrefix}/${f.name}`, `${newPrefix}/${f.name}`);
+          if (moveError) falhasMover++;
         }
-      } catch (e) {
-        console.warn("[Pipeline] erro ao mover anexos:", e);
       }
     }
-    await supabase.from("pipeline_contratos").delete().eq("id", promoting.id);
+    if (falhasMover !== 0) {
+      toast({
+        title: "Contrato criado, mas anexos não foram movidos",
+        description:
+          falhasMover === -1
+            ? "Não foi possível listar os anexos. O cartão foi mantido no pipeline — tente implantar novamente ou mova os arquivos manualmente."
+            : `${falhasMover} anexo(s) falharam ao mover. O cartão foi mantido no pipeline — tente novamente. Atenção: o contrato já existe em Contratos.`,
+        variant: "destructive",
+      });
+      setPromoting(null);
+      setPromoteInitial(null);
+      load();
+      return;
+    }
+    const { error: delError } = await supabase
+      .from("pipeline_contratos")
+      .delete()
+      .eq("id", promoting.id);
     setPromoting(null);
     setPromoteInitial(null);
-    toast({ title: "Implantado!", description: "Cartão e anexos movidos para Contratos." });
+    if (delError) {
+      toast({
+        title: "Contrato criado, mas o cartão não foi removido do pipeline",
+        description: delError.message,
+        variant: "destructive",
+      });
+    } else {
+      toast({ title: "Implantado!", description: "Cartão e anexos movidos para Contratos." });
+    }
     load();
   };
 
@@ -201,7 +229,23 @@ export default function Pipeline() {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Excluir esta proposta do pipeline?")) return;
-    await supabase.from("pipeline_contratos").delete().eq("id", id);
+    // Remove os anexos do storage antes, para não deixar arquivos órfãos.
+    if (user) {
+      const prefix = `${user.id}/${id}`;
+      const { data: files } = await supabase.storage
+        .from("pipeline-anexos")
+        .list(prefix, { limit: 1000 });
+      if (files?.length) {
+        await supabase.storage
+          .from("pipeline-anexos")
+          .remove(files.map((f) => `${prefix}/${f.name}`));
+      }
+    }
+    const { error } = await supabase.from("pipeline_contratos").delete().eq("id", id);
+    if (error) {
+      toast({ title: "Erro ao excluir", description: error.message, variant: "destructive" });
+      return;
+    }
     toast({ title: "Proposta excluída" });
     load();
   };
