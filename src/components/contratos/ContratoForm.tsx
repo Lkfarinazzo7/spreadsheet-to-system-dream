@@ -15,6 +15,7 @@ import { MoneyInput } from "@/components/ui/money-input";
 import { ContratoAnexos } from "./ContratoAnexos";
 import { DadosPropostaEditor } from "@/components/shared/DadosPropostaEditor";
 import type { DadosProposta } from "@/components/pipeline/PipelineForm";
+import { localIso } from "@/lib/format";
 
 type Lookup = { id: string; nome: string };
 
@@ -59,7 +60,7 @@ function addOneYear(iso: string): string {
   return dt.toISOString().slice(0, 10);
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localIso();
 
 const defaultComissoes = (): ComissaoLine[] => {
   const t = today();
@@ -237,9 +238,10 @@ export function ContratoForm({
         contratoId = data!.id;
       }
 
-      // Sync comissões
+      // Sync comissões — qualquer falha interrompe e é reportada (nada de sucesso falso).
       if (removedComissoes.length > 0) {
-        await supabase.from("comissoes").delete().in("id", removedComissoes);
+        const { error } = await supabase.from("comissoes").delete().in("id", removedComissoes);
+        if (error) throw error;
       }
       for (const c of comissoes) {
         const cPayload = {
@@ -248,14 +250,16 @@ export function ContratoForm({
           tipo: c.tipo,
           parcela: Number(c.parcela) || 1,
           valor: Number(c.valor) || 0,
-          mes_previsto: c.mes_previsto || new Date().toISOString().slice(0, 10),
+          mes_previsto: c.mes_previsto || localIso(),
           data_pagamento: c.data_pagamento || null,
           pago: !!c.data_pagamento,
         };
         if (c.id) {
-          await supabase.from("comissoes").update(cPayload).eq("id", c.id);
+          const { error } = await supabase.from("comissoes").update(cPayload).eq("id", c.id);
+          if (error) throw error;
         } else {
-          await supabase.from("comissoes").insert(cPayload);
+          const { error } = await supabase.from("comissoes").insert(cPayload);
+          if (error) throw error;
         }
       }
 

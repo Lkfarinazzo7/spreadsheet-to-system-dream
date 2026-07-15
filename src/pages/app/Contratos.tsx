@@ -52,7 +52,7 @@ export default function Contratos() {
 
   const remove = async (id: string) => {
     if (!confirm("Excluir este contrato? As comissões vinculadas também serão removidas.")) return;
-    await supabase.from("comissoes").delete().eq("contrato_id", id);
+    // As parcelas caem junto via ON DELETE CASCADE no banco — sem janela de inconsistência.
     const { error } = await supabase.from("contratos").delete().eq("id", id);
     if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
     toast({ title: "Contrato excluído" });
