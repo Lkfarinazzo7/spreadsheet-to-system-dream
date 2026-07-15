@@ -10,17 +10,17 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { PageHeader } from "@/components/layout/PageHeader";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, localIso } from "@/lib/format";
 import { Plus, Trash2, Check } from "lucide-react";
 
-type Despesa = { id: string; descricao: string; categoria: string | null; valor: number; data: string; pago: boolean };
+type Despesa = { id: string; descricao: string; categoria: string | null; valor: number; data: string; pago: boolean; data_pagamento: string | null };
 
 export default function Despesas() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [rows, setRows] = useState<Despesa[]>([]);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<Partial<Despesa>>({ descricao: "", valor: 0, data: new Date().toISOString().slice(0, 10), pago: false });
+  const [form, setForm] = useState<Partial<Despesa>>({ descricao: "", valor: 0, data: localIso(), pago: false });
 
   const load = async () => {
     const { data } = await supabase.from("despesas").select("*").order("data", { ascending: false });
@@ -42,21 +42,29 @@ export default function Despesas() {
       valor: Number(form.valor ?? 0),
       data: form.data!,
       pago: !!form.pago,
+      // Se já entra como paga, a melhor aproximação da data de pagamento é a própria data da despesa.
+      data_pagamento: form.pago ? form.data! : null,
     });
     if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
     setOpen(false);
-    setForm({ descricao: "", valor: 0, data: new Date().toISOString().slice(0, 10), pago: false });
+    setForm({ descricao: "", valor: 0, data: localIso(), pago: false });
     load();
   };
 
   const togglePago = async (r: Despesa) => {
-    await supabase.from("despesas").update({ pago: !r.pago }).eq("id", r.id);
+    const novo = !r.pago;
+    const { error } = await supabase
+      .from("despesas")
+      .update({ pago: novo, data_pagamento: novo ? localIso() : null })
+      .eq("id", r.id);
+    if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
     load();
   };
 
   const remove = async (id: string) => {
     if (!confirm("Excluir despesa?")) return;
-    await supabase.from("despesas").delete().eq("id", id);
+    const { error } = await supabase.from("despesas").delete().eq("id", id);
+    if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
     load();
   };
 
@@ -77,6 +85,7 @@ export default function Despesas() {
                 <TableHead>Descrição</TableHead>
                 <TableHead>Categoria</TableHead>
                 <TableHead>Data</TableHead>
+                <TableHead>Pagamento</TableHead>
                 <TableHead className="text-right">Valor</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-[120px]"></TableHead>
@@ -84,13 +93,14 @@ export default function Despesas() {
             </TableHeader>
             <TableBody>
               {rows.length === 0 && (
-                <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-10">Nenhuma despesa.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-10">Nenhuma despesa.</TableCell></TableRow>
               )}
               {rows.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell className="font-medium">{r.descricao}</TableCell>
                   <TableCell>{r.categoria ?? "—"}</TableCell>
                   <TableCell>{formatDate(r.data)}</TableCell>
+                  <TableCell>{formatDate(r.data_pagamento)}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatCurrency(r.valor)}</TableCell>
                   <TableCell>
                     {r.pago ? <Badge className="bg-success text-success-foreground hover:bg-success">Pago</Badge> : <Badge variant="secondary">Aberto</Badge>}

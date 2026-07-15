@@ -202,6 +202,7 @@ export type Database = {
           categoria: string | null
           created_at: string
           data: string
+          data_pagamento: string | null
           descricao: string
           id: string
           observacoes: string | null
@@ -214,6 +215,7 @@ export type Database = {
           categoria?: string | null
           created_at?: string
           data?: string
+          data_pagamento?: string | null
           descricao: string
           id?: string
           observacoes?: string | null
@@ -226,6 +228,7 @@ export type Database = {
           categoria?: string | null
           created_at?: string
           data?: string
+          data_pagamento?: string | null
           descricao?: string
           id?: string
           observacoes?: string | null

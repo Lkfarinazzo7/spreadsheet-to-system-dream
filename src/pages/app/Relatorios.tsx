@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, localIso } from "@/lib/format";
 import { FileSpreadsheet, FileText } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -13,8 +13,8 @@ import autoTable from "jspdf-autotable";
 
 export default function Relatorios() {
   const today = new Date();
-  const [from, setFrom] = useState(new Date(today.getFullYear(), today.getMonth() - 5, 1).toISOString().slice(0, 10));
-  const [to, setTo] = useState(new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10));
+  const [from, setFrom] = useState(localIso(new Date(today.getFullYear(), today.getMonth() - 5, 1)));
+  const [to, setTo] = useState(localIso(new Date(today.getFullYear(), today.getMonth() + 1, 0)));
   const [comissoes, setComissoes] = useState<any[]>([]);
   const [despesas, setDespesas] = useState<any[]>([]);
 
@@ -24,48 +24,81 @@ export default function Relatorios() {
 
   useEffect(() => {
     (async () => {
+      // Busca linhas que pertencem ao período por competência (mes_previsto / data)
+      // OU por caixa (data_pagamento), para alimentar as duas visões sem re-consultar.
       const [c, d] = await Promise.all([
         supabase.from("comissoes").select("*, contrato:contratos(cliente, operadora:operadoras(nome), canal:canais_venda(nome))")
-          .gte("mes_previsto", from).lte("mes_previsto", to),
-        supabase.from("despesas").select("*").gte("data", from).lte("data", to),
+          .or(`and(mes_previsto.gte.${from},mes_previsto.lte.${to}),and(data_pagamento.gte.${from},data_pagamento.lte.${to})`),
+        supabase.from("despesas").select("*")
+          .or(`and(data.gte.${from},data.lte.${to}),and(data_pagamento.gte.${from},data_pagamento.lte.${to})`),
       ]);
       setComissoes((c.data as any) ?? []);
       setDespesas((d.data as any) ?? []);
     })();
   }, [from, to]);
 
+  const inRange = (v: string | null | undefined) => !!v && v >= from && v <= to;
+
+  // Duas visões, nunca misturadas:
+  //  * REALIZADO (caixa): comissão paga pela data_pagamento; despesa paga pela data_pagamento.
+  //  * PREVISTO (competência): comissão pelo mes_previsto; despesa pela data prevista.
   const totals = useMemo(() => {
-    const recebido = comissoes.filter((c) => c.pago).reduce((s, c) => s + Number(c.valor), 0);
-    const previsto = comissoes.reduce((s, c) => s + Number(c.valor), 0);
-    const desp = despesas.reduce((s, c) => s + Number(c.valor), 0);
-    return { recebido, previsto, desp, lucro: recebido - desp };
-  }, [comissoes, despesas]);
+    const recebido = comissoes
+      .filter((c) => c.pago && inRange(c.data_pagamento))
+      .reduce((s, c) => s + Number(c.valor), 0);
+    const despPaga = despesas
+      .filter((d) => d.pago && inRange(d.data_pagamento))
+      .reduce((s, d) => s + Number(d.valor), 0);
+
+    const previsto = comissoes
+      .filter((c) => inRange(c.mes_previsto))
+      .reduce((s, c) => s + Number(c.valor), 0);
+    const despPrevista = despesas
+      .filter((d) => inRange(d.data))
+      .reduce((s, d) => s + Number(d.valor), 0);
+
+    return {
+      recebido,
+      despPaga,
+      lucro: recebido - despPaga, // caixa: só o que entrou menos o que saiu
+      previsto,
+      despPrevista,
+      resultadoPrevisto: previsto - despPrevista,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [comissoes, despesas, from, to]);
 
   const porOperadora = useMemo(() => {
     const m = new Map<string, number>();
     comissoes.forEach((c) => {
+      if (!c.pago || !inRange(c.data_pagamento)) return;
       const nome = c.contrato?.operadora?.nome ?? "Sem operadora";
       m.set(nome, (m.get(nome) ?? 0) + Number(c.valor));
     });
-    return Array.from(m, ([nome, valor]) => ({ nome, valor }));
-  }, [comissoes]);
+    return Array.from(m, ([nome, valor]) => ({ nome, valor })).sort((a, b) => b.valor - a.valor);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [comissoes, from, to]);
 
   const porCanal = useMemo(() => {
     const m = new Map<string, number>();
     comissoes.forEach((c) => {
+      if (!c.pago || !inRange(c.data_pagamento)) return;
       const nome = c.contrato?.canal?.nome ?? "Sem canal";
       m.set(nome, (m.get(nome) ?? 0) + Number(c.valor));
     });
-    return Array.from(m, ([nome, valor]) => ({ nome, valor }));
-  }, [comissoes]);
+    return Array.from(m, ([nome, valor]) => ({ nome, valor })).sort((a, b) => b.valor - a.valor);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [comissoes, from, to]);
 
   const exportXlsx = () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([
-      { Indicador: "Comissão prevista", Valor: totals.previsto },
-      { Indicador: "Comissão recebida", Valor: totals.recebido },
-      { Indicador: "Despesas", Valor: totals.desp },
-      { Indicador: "Lucro líquido", Valor: totals.lucro },
+      { Indicador: "REALIZADO (caixa) — Comissão recebida", Valor: totals.recebido },
+      { Indicador: "REALIZADO (caixa) — Despesas pagas", Valor: totals.despPaga },
+      { Indicador: "REALIZADO (caixa) — Lucro", Valor: totals.lucro },
+      { Indicador: "PREVISTO (competência) — Comissão prevista", Valor: totals.previsto },
+      { Indicador: "PREVISTO (competência) — Despesas previstas", Valor: totals.despPrevista },
+      { Indicador: "PREVISTO (competência) — Resultado", Valor: totals.resultadoPrevisto },
     ]), "Resumo");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(porOperadora), "Por operadora");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(porCanal), "Por canal");
@@ -82,10 +115,12 @@ export default function Relatorios() {
       startY: 32,
       head: [["Indicador", "Valor"]],
       body: [
-        ["Comissão prevista", formatCurrency(totals.previsto)],
-        ["Comissão recebida", formatCurrency(totals.recebido)],
-        ["Despesas", formatCurrency(totals.desp)],
-        ["Lucro líquido", formatCurrency(totals.lucro)],
+        ["Realizado (caixa) — Comissão recebida", formatCurrency(totals.recebido)],
+        ["Realizado (caixa) — Despesas pagas", formatCurrency(totals.despPaga)],
+        ["Realizado (caixa) — Lucro", formatCurrency(totals.lucro)],
+        ["Previsto (competência) — Comissão prevista", formatCurrency(totals.previsto)],
+        ["Previsto (competência) — Despesas previstas", formatCurrency(totals.despPrevista)],
+        ["Previsto (competência) — Resultado", formatCurrency(totals.resultadoPrevisto)],
       ],
     });
     autoTable(doc, {
@@ -119,12 +154,28 @@ export default function Relatorios() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 grid-cols-2 md:grid-cols-4 mb-4">
+      <div className="mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">Realizado (caixa)</div>
+      <div className="grid gap-4 grid-cols-3 mb-4">
         {[
-          { label: "Previsto", value: totals.previsto, accent: "text-primary" },
-          { label: "Recebido", value: totals.recebido, accent: "text-success" },
-          { label: "Despesas", value: totals.desp, accent: "text-destructive" },
+          { label: "Comissão recebida", value: totals.recebido, accent: "text-success" },
+          { label: "Despesas pagas", value: totals.despPaga, accent: "text-destructive" },
           { label: "Lucro", value: totals.lucro, accent: totals.lucro >= 0 ? "text-success" : "text-destructive" },
+        ].map((k) => (
+          <Card key={k.label}>
+            <CardContent className="p-4">
+              <div className="text-xs text-muted-foreground">{k.label}</div>
+              <div className={`text-xl font-semibold mt-1 ${k.accent}`}>{formatCurrency(k.value)}</div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <div className="mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">Previsto (competência)</div>
+      <div className="grid gap-4 grid-cols-3 mb-4">
+        {[
+          { label: "Comissão prevista", value: totals.previsto, accent: "text-primary" },
+          { label: "Despesas previstas", value: totals.despPrevista, accent: "text-destructive" },
+          { label: "Resultado previsto", value: totals.resultadoPrevisto, accent: totals.resultadoPrevisto >= 0 ? "text-success" : "text-destructive" },
         ].map((k) => (
           <Card key={k.label}>
             <CardContent className="p-4">
@@ -137,7 +188,7 @@ export default function Relatorios() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader><CardTitle className="text-base">Comissão por operadora</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">Comissão recebida por operadora</CardTitle></CardHeader>
           <CardContent>
             <ul className="divide-y">
               {porOperadora.map((r) => (
@@ -149,7 +200,7 @@ export default function Relatorios() {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle className="text-base">Comissão por canal</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">Comissão recebida por canal</CardTitle></CardHeader>
           <CardContent>
             <ul className="divide-y">
               {porCanal.map((r) => (
