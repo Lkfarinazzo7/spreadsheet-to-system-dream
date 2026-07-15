@@ -77,8 +77,11 @@ export function parseDate(v: unknown): string | null {
 function parseValor(v: unknown): number | null {
   if (v == null || v === "") return null;
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
-  const n = parseBRL(String(v));
-  return Number.isFinite(n) && n !== 0 ? n : (String(v).trim() === "0" ? 0 : null);
+  const s = String(v).trim();
+  // Sem nenhum dígito não há como ser um valor válido
+  if (!/\d/.test(s)) return null;
+  const n = parseBRL(s);
+  return Number.isFinite(n) ? n : null;
 }
 
 export function parseImportRows(

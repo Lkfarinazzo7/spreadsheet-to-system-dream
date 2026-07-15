@@ -25,13 +25,28 @@ export const formatBRL = (n: number | null | undefined) =>
     maximumFractionDigits: 2,
   }).format(Number(n ?? 0));
 
-/** Parse a BRL formatted string ("1.234,56" or "R$ 1.234,56") to a number. */
+/** Today (or a given Date) as yyyy-mm-dd in the LOCAL timezone.
+ *  Never use `new Date().toISOString().slice(0,10)` for "hoje": após as 21h
+ *  no horário de Brasília isso devolve o dia seguinte (UTC). */
+export const localIso = (d: Date = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/** Parse a BRL formatted string ("1.234,56" or "R$ 1.234,56") to a number.
+ *  Also handles US-style decimals ("1234.56") to avoid multiplying values by 100
+ *  when a spreadsheet exports numbers with a dot as decimal separator. */
 export const parseBRL = (s: string): number => {
   if (!s) return 0;
-  const clean = String(s)
-    .replace(/[^\d,.-]/g, "")
-    .replace(/\./g, "")
-    .replace(",", ".");
+  let clean = String(s).replace(/[^\d,.-]/g, "");
+  if (clean.includes(",")) {
+    // Formato BR: pontos são milhar, vírgula é decimal
+    clean = clean.replace(/\./g, "").replace(",", ".");
+  } else {
+    // Sem vírgula: um único ponto seguido de 1-2 dígitos no fim = decimal (ex. "1234.56");
+    // caso contrário, pontos são separadores de milhar (ex. "1.234")
+    const dots = (clean.match(/\./g) ?? []).length;
+    const looksDecimal = dots === 1 && /\.\d{1,2}$/.test(clean);
+    if (!looksDecimal) clean = clean.replace(/\./g, "");
+  }
   const n = parseFloat(clean);
   return Number.isFinite(n) ? n : 0;
 };
