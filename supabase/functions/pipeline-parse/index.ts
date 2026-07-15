@@ -189,7 +189,7 @@ Se identificar a operadora, retorne o nome o mais próximo possível dessa lista
       try {
         parsed = typeof args === "string" ? JSON.parse(args) : args;
       } catch (e) {
-        console.error("Falha ao parsear args:", e, args);
+        console.error("Falha ao parsear args:", e instanceof Error ? e.message : String(e)); // não logar `args`: contém dados pessoais
       }
     }
 
