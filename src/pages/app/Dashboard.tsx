@@ -9,6 +9,8 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { formatCurrency, localIso } from "@/lib/format";
 import { Wallet, CircleDollarSign, TrendingUp, ChevronLeft, ChevronRight, CalendarRange } from "lucide-react";
 import { Hash } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { fetchAllPages } from "@/lib/supabasePaging";
 import {
   ResponsiveContainer,
   BarChart,
@@ -52,6 +54,7 @@ const endOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth() + 1, 0);
 
 export default function Dashboard() {
   const today = new Date();
+  const { toast } = useToast();
 
   // Period state
   const [mode, setMode] = useState<"month" | "custom">("month");
@@ -74,22 +77,28 @@ export default function Dashboard() {
   useEffect(() => {
     document.title = "Dashboard — Corretor SaaS";
     (async () => {
-      const [k, ct, o, cn] = await Promise.all([
-        supabase
-          .from("comissoes")
-          .select("id,contrato_id,mes_previsto,valor,pago,data_pagamento,contrato:contratos(operadora_id,canal_id)"),
-        supabase
-          .from("contratos")
-          .select("id,valor_mensal,operadora_id,canal_id,data_vigencia"),
-        supabase.from("operadoras").select("id,nome"),
-        supabase.from("canais_venda").select("id,nome"),
-      ]);
-      setComissoes((k.data as any) ?? []);
-      setContratos((ct.data as any) ?? []);
-      setOperadoras((o.data as any) ?? []);
-      setCanais((cn.data as any) ?? []);
+      try {
+        const [k, ct, o, cn] = await Promise.all([
+          fetchAllPages<Comissao>((from, to) => supabase
+            .from("comissoes")
+            .select("id,contrato_id,mes_previsto,valor,pago,data_pagamento,contrato:contratos(operadora_id,canal_id)")
+            .range(from, to)),
+          fetchAllPages<Contrato>((from, to) => supabase
+            .from("contratos")
+            .select("id,valor_mensal,operadora_id,canal_id,data_vigencia")
+            .range(from, to)),
+          fetchAllPages<{ id: string; nome: string }>((from, to) => supabase.from("operadoras").select("id,nome").range(from, to)),
+          fetchAllPages<{ id: string; nome: string }>((from, to) => supabase.from("canais_venda").select("id,nome").range(from, to)),
+        ]);
+        setComissoes(k);
+        setContratos(ct);
+        setOperadoras(o);
+        setCanais(cn);
+      } catch (error) {
+        toast({ title: "Erro ao carregar o Dashboard", description: error instanceof Error ? error.message : "Falha na consulta.", variant: "destructive" });
+      }
     })();
-  }, []);
+  }, [toast]);
 
   // Filter comissões inside the active period
   const inPeriod = useMemo(() => {
@@ -108,7 +117,11 @@ export default function Dashboard() {
 
   const stats = useMemo(() => {
     const recebidas = inPeriod.filter((c) => c.pago);
-    const aReceber = inPeriod.filter((c) => !c.pago).reduce((s, c) => s + Number(c.valor), 0);
+    const emAberto = comissoes.filter((c) => !c.pago).reduce((s, c) => s + Number(c.valor), 0);
+    const hoje = localIso();
+    const vencida = comissoes
+      .filter((c) => !c.pago && c.mes_previsto < hoje)
+      .reduce((s, c) => s + Number(c.valor), 0);
     const receitaMes = recebidas.reduce((s, c) => s + Number(c.valor), 0);
     // Ticket médio: receita TOTAL recebida por contrato (somando todas as parcelas
     // pagas daquele contrato, em qualquer data) ÷ qtd de contratos no período.
@@ -129,7 +142,8 @@ export default function Dashboard() {
       : 0;
     return {
       receitaMes,
-      aReceber,
+      emAberto,
+      vencida,
       ticketReceita,
       qtdContratos: contratosPeriodo.length,
     };
@@ -191,8 +205,8 @@ export default function Dashboard() {
   const kpis = [
     { label: "Receita do período", value: formatCurrency(stats.receitaMes), icon: CircleDollarSign, accent: "text-success" },
     { label: "Contratos do período", value: String(stats.qtdContratos), icon: Hash, accent: "text-primary" },
-    { label: "Comissão a receber", value: formatCurrency(stats.aReceber), icon: Wallet, accent: "text-primary" },
-    { label: "Ticket médio de receita", value: formatCurrency(stats.ticketReceita), icon: TrendingUp, accent: "text-success" },
+    { label: "Comissão em aberto", value: formatCurrency(stats.emAberto), icon: Wallet, accent: "text-primary" },
+    { label: "Comissão vencida", value: formatCurrency(stats.vencida), icon: TrendingUp, accent: stats.vencida > 0 ? "text-destructive" : "text-success" },
   ];
 
   const monthLabel = `${MONTHS_PT[monthDate.getMonth()]} ${monthDate.getFullYear()}`;

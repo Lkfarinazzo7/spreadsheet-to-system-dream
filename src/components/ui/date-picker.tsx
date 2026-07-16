@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { isValidIsoDate } from "@/lib/format";
 
 export type DatePickerProps = {
   /** Value as ISO yyyy-mm-dd string (or empty/null). */
@@ -19,7 +20,7 @@ export type DatePickerProps = {
 };
 
 const isoToDate = (iso?: string | null): Date | undefined => {
-  if (!iso) return undefined;
+  if (!isValidIsoDate(iso)) return undefined;
   const [y, m, d] = iso.split("-").map(Number);
   if (!y || !m || !d) return undefined;
   const dt = new Date(y, m - 1, d);
@@ -56,8 +57,15 @@ export function DatePicker({
     }
     const parsed = parse(raw, "dd/MM/yyyy", new Date());
     if (isValid(parsed)) {
-      onChange(dateToIso(parsed));
+      const iso = dateToIso(parsed);
+      if (isValidIsoDate(iso)) {
+        onChange(iso);
+        setText(format(parsed, "dd/MM/yyyy"));
+        return;
+      }
     }
+    // Não deixa um texto inválido aparentar que foi salvo; restaura o valor real.
+    setText(selected ? format(selected, "dd/MM/yyyy") : "");
   };
 
   return (

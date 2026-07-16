@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import * as XLSX from "xlsx";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -20,6 +19,7 @@ import {
   TEMPLATE_EXAMPLE,
 } from "@/lib/pipelineImport";
 import { formatCurrency } from "@/lib/format";
+import { downloadSpreadsheet, readSpreadsheet } from "@/lib/spreadsheet";
 
 export function PipelineImportDialog({
   open,
@@ -45,30 +45,42 @@ export function PipelineImportDialog({
     setFileName(null);
     setParsed(null);
     (async () => {
-      const [{ data: o }, { data: c }] = await Promise.all([
+      const [o, c] = await Promise.all([
         supabase.from("operadoras").select("id,nome").eq("ativo", true),
         supabase.from("canais_venda").select("id,nome").eq("ativo", true),
       ]);
-      setOperadoras((o as any) ?? []);
-      setCanais((c as any) ?? []);
+      if (o.error || c.error) {
+        toast({
+          title: "Erro ao preparar importação",
+          description: (o.error ?? c.error)?.message,
+          variant: "destructive",
+        });
+        return;
+      }
+      setOperadoras(o.data ?? []);
+      setCanais(c.data ?? []);
     })();
-  }, [open]);
+  }, [open, toast]);
 
-  const downloadTemplate = () => {
-    const ws = XLSX.utils.json_to_sheet([TEMPLATE_EXAMPLE], { header: [...TEMPLATE_HEADERS] });
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Propostas");
-    XLSX.writeFile(wb, "modelo-pipeline.xlsx");
+  const downloadTemplate = async () => {
+    const row = Object.fromEntries(TEMPLATE_HEADERS.map((header) => [header, TEMPLATE_EXAMPLE[header]]));
+    try {
+      await downloadSpreadsheet([{ name: "Propostas", rows: [row] }], "modelo-pipeline.xlsx");
+    } catch (error) {
+      toast({ title: "Erro ao gerar modelo", description: error instanceof Error ? error.message : "Falha ao gerar Excel.", variant: "destructive" });
+    }
   };
 
   const onFile = async (file: File) => {
     setFileName(file.name);
-    const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { type: "array" });
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
-    const result = parseImportRows(rows, { operadoras, canais, defaultEtapa });
-    setParsed(result);
+    try {
+      const rows = await readSpreadsheet(file);
+      const result = parseImportRows(rows, { operadoras, canais, defaultEtapa });
+      setParsed(result);
+    } catch (error) {
+      setParsed(null);
+      toast({ title: "Arquivo inválido", description: error instanceof Error ? error.message : "Não foi possível ler a planilha.", variant: "destructive" });
+    }
   };
 
   // Re-parse when defaultEtapa changes (without re-reading file)
@@ -89,6 +101,25 @@ export function PipelineImportDialog({
     if (!user || !parsed?.valid.length) return;
     setBusy(true);
     try {
+      const proposalNumbers = Array.from(new Set(parsed.valid.map((row) => row.numero_proposta).filter((value): value is string => !!value)));
+      const existingKeys = new Set<string>();
+      for (let i = 0; i < proposalNumbers.length; i += 100) {
+        const chunk = proposalNumbers.slice(i, i + 100);
+        const [pipelineResult, contractResult] = await Promise.all([
+          supabase.from("pipeline_contratos").select("numero_proposta,operadora_id").in("numero_proposta", chunk),
+          supabase.from("contratos").select("numero_proposta,operadora_id").in("numero_proposta", chunk),
+        ]);
+        if (pipelineResult.error) throw pipelineResult.error;
+        if (contractResult.error) throw contractResult.error;
+        [...(pipelineResult.data ?? []), ...(contractResult.data ?? [])].forEach((row) => {
+          if (row.numero_proposta) existingKeys.add(`${row.operadora_id ?? "sem-operadora"}:${row.numero_proposta.trim().toLowerCase()}`);
+        });
+      }
+      const duplicates = parsed.valid.filter((row) => row.numero_proposta && existingKeys.has(`${row.operadora_id ?? "sem-operadora"}:${row.numero_proposta.trim().toLowerCase()}`));
+      if (duplicates.length) {
+        throw new Error(`${duplicates.length} proposta(s) já existem no pipeline ou em contratos. Remova as duplicadas antes de importar.`);
+      }
+
       const base = Date.now();
       const payload = parsed.valid.map((r, i) => ({
         user_id: user.id,
@@ -134,7 +165,7 @@ export function PipelineImportDialog({
                   Baixe o arquivo de exemplo, preencha e envie de volta.
                 </div>
               </div>
-              <Button variant="outline" size="sm" onClick={downloadTemplate}>
+              <Button variant="outline" size="sm" onClick={() => void downloadTemplate()}>
                 <Download className="h-4 w-4" /> Baixar modelo (.xlsx)
               </Button>
             </CardContent>
@@ -153,14 +184,14 @@ export function PipelineImportDialog({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Arquivo (.xlsx, .xls, .csv)</Label>
+              <Label>Arquivo (.xlsx ou .csv)</Label>
               <Input
                 ref={fileRef}
                 type="file"
-                accept=".xlsx,.xls,.csv"
+                accept=".xlsx,.csv"
                 onChange={(e) => {
                   const f = e.target.files?.[0];
-                  if (f) onFile(f);
+                  if (f) void onFile(f);
                 }}
               />
             </div>

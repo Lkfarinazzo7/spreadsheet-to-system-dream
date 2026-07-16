@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { formatBRL, localIso, parseBRL } from "@/lib/format";
-import { parseImportRows } from "@/lib/pipelineImport";
+import { addYearsIso, formatBRL, isValidIsoDate, localIso, parseBRL } from "@/lib/format";
+import { parseDate, parseImportRows } from "@/lib/pipelineImport";
 
 describe("parseBRL", () => {
   it("formato BR completo: '1.234,56' → 1234.56", () => {
@@ -13,6 +13,10 @@ describe("parseBRL", () => {
 
   it("decimal americano: '1234.56' → 1234.56 (NÃO 123456)", () => {
     expect(parseBRL("1234.56")).toBe(1234.56);
+  });
+
+  it("decimal americano com milhar: '1,234.56' → 1234.56", () => {
+    expect(parseBRL("1,234.56")).toBe(1234.56);
   });
 
   it("zero com símbolo: 'R$ 0,00' → 0", () => {
@@ -41,6 +45,18 @@ describe("parseBRL", () => {
 
   it("vazio → 0", () => {
     expect(parseBRL("")).toBe(0);
+  });
+});
+
+describe("datas estritas", () => {
+  it("rejeita datas inexistentes", () => {
+    expect(isValidIsoDate("2026-02-31")).toBe(false);
+    expect(parseDate("31/02/2026")).toBeNull();
+  });
+
+  it("preserva o fim do mês no reajuste anual", () => {
+    expect(addYearsIso("2024-02-29", 1)).toBe("2025-02-28");
+    expect(addYearsIso("2024-03-15", 1)).toBe("2025-03-15");
   });
 });
 
@@ -84,6 +100,17 @@ describe("parseValor (via parseImportRows)", () => {
   it("vazio → erro", () => {
     const r = parseImportRows([row("")], ctx);
     expect(r.errors).toHaveLength(1);
+  });
+
+  it("rejeita valor negativo, tipo desconhecido e proposta repetida", () => {
+    expect(parseImportRows([row("-10,00")], ctx).errors[0].reason).toBe("Valor inválido");
+    expect(parseImportRows([{ ...row("10,00"), tipo: "X" }], ctx).errors[0].reason).toContain("Tipo");
+    const result = parseImportRows([
+      { ...row("10,00"), numero_proposta: "ABC" },
+      { ...row("20,00"), numero_proposta: "abc" },
+    ], ctx);
+    expect(result.valid).toHaveLength(1);
+    expect(result.errors[0].reason).toContain("duplicada");
   });
 });
 

@@ -14,7 +14,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Loader2, AlertTriangle, Trash2, Sparkles, ChevronDown, ChevronUp, Mail, Ban } from "lucide-react";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MoneyInput } from "@/components/ui/money-input";
-import { maskPhone, getAge } from "@/lib/format";
+import { addYearsIso, maskPhone, getAge } from "@/lib/format";
 import { PipelineAnexos } from "./PipelineAnexos";
 import { ElaboracaoEmailDialog } from "./ElaboracaoEmailDialog";
 import { buildElaboracaoEmail } from "@/lib/elaboracaoEmail";
@@ -117,12 +117,6 @@ const empty: PipelineFormValues = {
   },
 };
 
-function addOneYear(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(Date.UTC(y + 1, m - 1, d));
-  return dt.toISOString().slice(0, 10);
-}
-
 function maskCnpjCpf(value: string, tipo: string) {
   const v = value.replace(/\D/g, "");
   if (tipo === "PJ") {
@@ -187,15 +181,23 @@ export function PipelineForm({
         supabase.from("operadoras").select("id,nome").eq("ativo", true).order("nome"),
         supabase.from("canais_venda").select("id,nome").eq("ativo", true).order("nome"),
       ]);
+      if (o.error || c.error) {
+        toast({
+          title: "Erro ao carregar cadastros",
+          description: (o.error ?? c.error)?.message,
+          variant: "destructive",
+        });
+        return;
+      }
       setOperadoras((o.data as any) ?? []);
       setCanais((c.data as any) ?? []);
     })();
-  }, []);
+  }, [toast]);
 
   // Auto-fill data_reajuste when vigencia is set and reajuste empty
   useEffect(() => {
     if (form.data_vigencia && !form.dados_proposta?.data_reajuste) {
-      setDP({ data_reajuste: addOneYear(form.data_vigencia) });
+      setDP({ data_reajuste: addYearsIso(form.data_vigencia, 1) });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.data_vigencia]);
@@ -303,7 +305,7 @@ export function PipelineForm({
 
       toast({
         title: "Preenchimento concluído",
-        description: filled > 0 ? `${filled} campo(s) preenchido(s).` : "Nada novo identificado.",
+        description: "Os dados identificados preencheram apenas os campos que estavam vazios.",
       });
       setQuickOpen(false);
     } catch (e: any) {
@@ -328,8 +330,6 @@ export function PipelineForm({
     if (target > titulares.length) {
       const add = Array.from({ length: target - titulares.length }, emptyTitular);
       setDP({ titulares: [...titulares, ...add] });
-    } else {
-      setDP({ titulares: titulares.slice(0, target) });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dp.qtd_titulares]);
@@ -342,6 +342,7 @@ export function PipelineForm({
   const setDependentesCount = (titIdx: number, count: number) => {
     const t = titulares[titIdx];
     const cur = t.dependentes ?? [];
+    if (count < cur.length && !window.confirm("Reduzir a quantidade excluirá os últimos dependentes preenchidos. Continuar?")) return;
     let next: Dependente[];
     if (count > cur.length) {
       next = [...cur, ...Array.from({ length: count - cur.length }, emptyDependente)];
@@ -543,7 +544,7 @@ export function PipelineForm({
                   type="number"
                   min={0}
                   value={dp.vidas ?? ""}
-                  onChange={(e) => setDP({ vidas: e.target.value === "" ? undefined : Number(e.target.value) })}
+                  onChange={(e) => setDP({ vidas: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)) })}
                 />
               </div>
               <div className="space-y-1.5">
@@ -552,7 +553,14 @@ export function PipelineForm({
                   type="number"
                   min={0}
                   value={dp.qtd_titulares ?? ""}
-                  onChange={(e) => setDP({ qtd_titulares: e.target.value === "" ? undefined : Number(e.target.value) })}
+                  onChange={(e) => {
+                    const next = e.target.value === "" ? undefined : Math.max(0, Number(e.target.value));
+                    if (next != null && next < titulares.length && !window.confirm("Reduzir a quantidade excluirá os últimos titulares preenchidos. Continuar?")) return;
+                    setDP({
+                      qtd_titulares: next,
+                      ...(next != null && next < titulares.length ? { titulares: titulares.slice(0, next) } : {}),
+                    });
+                  }}
                 />
               </div>
               <div className="space-y-1.5">
@@ -561,7 +569,7 @@ export function PipelineForm({
                   type="number"
                   min={0}
                   value={dp.qtd_dependentes ?? ""}
-                  onChange={(e) => setDP({ qtd_dependentes: e.target.value === "" ? undefined : Number(e.target.value) })}
+                  onChange={(e) => setDP({ qtd_dependentes: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)) })}
                 />
               </div>
 
@@ -802,8 +810,9 @@ export function PipelineForm({
                 variant="outline"
                 className="text-destructive hover:text-destructive"
                 onClick={async () => {
-                  const motivo = window.prompt("Motivo do declínio (opcional):") ?? "";
-                  if (motivo === null) return;
+                  const resposta = window.prompt("Motivo do declínio (opcional):");
+                  if (resposta === null) return;
+                  const motivo = resposta.trim();
                   const { error } = await supabase
                     .from("pipeline_contratos")
                     .update({

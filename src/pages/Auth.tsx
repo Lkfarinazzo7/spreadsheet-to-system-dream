@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Loader2 } from "lucide-react";
@@ -23,31 +22,16 @@ export default function Auth() {
   if (loading) return null;
   if (user) return <Navigate to="/app" replace />;
 
-  const submit = async (e: React.FormEvent<HTMLFormElement>, mode: "signin" | "signup") => {
+  const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const email = String(fd.get("email") || "");
     const password = String(fd.get("password") || "");
-    const name = String(fd.get("name") || "");
     setBusy(true);
     try {
-      if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/app`,
-            data: { display_name: name },
-          },
-        });
-        if (error) throw error;
-        toast({ title: "Conta criada", description: "Você já está logado." });
-        nav("/app");
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        nav("/app");
-      }
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      nav("/app");
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
     } finally {
@@ -71,16 +55,10 @@ export default function Auth() {
         <Card className="shadow-lg">
           <CardHeader>
             <CardTitle>Bem-vindo</CardTitle>
-            <CardDescription>Acesse sua conta ou crie uma nova.</CardDescription>
+            <CardDescription>Acesso restrito à equipe autorizada.</CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="signin">
-              <TabsList className="grid grid-cols-2 w-full">
-                <TabsTrigger value="signin">Entrar</TabsTrigger>
-                <TabsTrigger value="signup">Cadastrar</TabsTrigger>
-              </TabsList>
-              <TabsContent value="signin">
-                <form onSubmit={(e) => submit(e, "signin")} className="space-y-3 mt-4">
+                <form onSubmit={submit} className="space-y-3 mt-4">
                   <div className="space-y-1.5">
                     <Label htmlFor="email-in">E-mail</Label>
                     <Input id="email-in" name="email" type="email" required autoComplete="email" />
@@ -94,28 +72,6 @@ export default function Auth() {
                     Entrar
                   </Button>
                 </form>
-              </TabsContent>
-              <TabsContent value="signup">
-                <form onSubmit={(e) => submit(e, "signup")} className="space-y-3 mt-4">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="name">Nome</Label>
-                    <Input id="name" name="name" required />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="email-up">E-mail</Label>
-                    <Input id="email-up" name="email" type="email" required autoComplete="email" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="pw-up">Senha</Label>
-                    <Input id="pw-up" name="password" type="password" required minLength={6} autoComplete="new-password" />
-                  </div>
-                  <Button type="submit" disabled={busy} className="w-full">
-                    {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-                    Criar conta
-                  </Button>
-                </form>
-              </TabsContent>
-            </Tabs>
           </CardContent>
         </Card>
       </div>

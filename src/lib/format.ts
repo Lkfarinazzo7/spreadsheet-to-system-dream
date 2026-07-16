@@ -31,15 +31,43 @@ export const formatBRL = (n: number | null | undefined) =>
 export const localIso = (d: Date = new Date()) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
+/** Valida uma data ISO sem aceitar a normalização automática de 31/02 para março. */
+export const isValidIsoDate = (value: string | null | undefined): value is string => {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year
+    && date.getUTCMonth() === month - 1
+    && date.getUTCDate() === day;
+};
+
+/** Soma anos a uma data ISO, preservando o fim do mês (29/02 → 28/02). */
+export const addYearsIso = (value: string, years: number): string => {
+  if (!isValidIsoDate(value) || !Number.isInteger(years)) return value;
+  const [year, month, day] = value.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(year + years, month, 0)).getUTCDate();
+  return `${year + years}-${String(month).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+};
+
 /** Parse a BRL formatted string ("1.234,56" or "R$ 1.234,56") to a number.
  *  Also handles US-style decimals ("1234.56") to avoid multiplying values by 100
  *  when a spreadsheet exports numbers with a dot as decimal separator. */
 export const parseBRL = (s: string): number => {
   if (!s) return 0;
   let clean = String(s).replace(/[^\d,.-]/g, "");
-  if (clean.includes(",")) {
-    // Formato BR: pontos são milhar, vírgula é decimal
-    clean = clean.replace(/\./g, "").replace(",", ".");
+  const lastComma = clean.lastIndexOf(",");
+  const lastDot = clean.lastIndexOf(".");
+
+  if (lastComma >= 0 && lastDot >= 0) {
+    // Quando existem ambos, o último separador é o decimal:
+    // 1.234,56 (BR) ou 1,234.56 (EUA).
+    clean = lastComma > lastDot
+      ? clean.replace(/\./g, "").replace(",", ".")
+      : clean.replace(/,/g, "");
+  } else if (lastComma >= 0) {
+    const commas = (clean.match(/,/g) ?? []).length;
+    const looksThousands = commas > 1 || (commas === 1 && /,\d{3}$/.test(clean));
+    clean = looksThousands ? clean.replace(/,/g, "") : clean.replace(",", ".");
   } else {
     // Sem vírgula: um único ponto seguido de 1-2 dígitos no fim = decimal (ex. "1234.56");
     // caso contrário, pontos são separadores de milhar (ex. "1.234")

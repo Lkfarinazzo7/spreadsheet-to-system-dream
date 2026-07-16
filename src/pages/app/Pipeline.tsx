@@ -12,10 +12,12 @@ import { PipelineForm, PipelineFormValues } from "@/components/pipeline/Pipeline
 import { ContratoForm, ContratoFormValues } from "@/components/contratos/ContratoForm";
 import { PipelineImportDialog } from "@/components/pipeline/PipelineImportDialog";
 import { DeclinadasDialog } from "@/components/pipeline/DeclinadasDialog";
-import { formatCurrency, localIso } from "@/lib/format";
+import { addYearsIso, formatCurrency, localIso } from "@/lib/format";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Ban } from "lucide-react";
+import { listAllStorageFiles, removeStoragePrefix } from "@/lib/storage";
+import { fetchAllPages } from "@/lib/supabasePaging";
 
 const ETAPAS = [
   "Montagem de contrato",
@@ -36,12 +38,6 @@ const ETAPA_ACCENT: Record<string, string> = {
   "Aguardando vigência": "bg-success/60",
   "Implantado": "bg-success",
 };
-
-function addOneYear(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(Date.UTC(y + 1, m - 1, d));
-  return dt.toISOString().slice(0, 10);
-}
 
 export default function Pipeline() {
   const { user } = useAuth();
@@ -65,28 +61,30 @@ export default function Pipeline() {
   );
 
   const load = async () => {
-    const { data, error } = await supabase
-      .from("pipeline_contratos")
-      .select("*, operadora:operadoras(nome), canal:canais_venda(nome)")
-      .neq("etapa", "Implantado")
-      .eq("declinada", false)
-      .order("posicao");
-    if (error) {
+    try {
+      const data = await fetchAllPages<PipelineItem>((from, to) => supabase
+        .from("pipeline_contratos")
+        .select("*, operadora:operadoras(nome), canal:canais_venda(nome)")
+        .neq("etapa", "Implantado")
+        .eq("declinada", false)
+        .order("posicao")
+        .range(from, to));
+      setItems(data);
+
+      const { count, error: countError } = await supabase
+        .from("pipeline_contratos")
+        .select("id", { count: "exact", head: true })
+        .eq("declinada", true);
+      if (countError) throw countError;
+      setDeclinadasCount(count ?? 0);
+    } catch (error) {
       console.error("[Pipeline] load error:", error);
       toast({
         title: "Erro ao carregar pipeline",
-        description: error.message,
+        description: error instanceof Error ? error.message : "Falha inesperada ao consultar as propostas.",
         variant: "destructive",
       });
-      return;
     }
-    setItems((data as any) ?? []);
-    // count declinadas
-    const { count } = await supabase
-      .from("pipeline_contratos")
-      .select("id", { count: "exact", head: true })
-      .eq("declinada", true);
-    setDeclinadasCount(count ?? 0);
   };
 
   useEffect(() => {
@@ -116,9 +114,9 @@ export default function Pipeline() {
     [items, today],
   );
 
-  const handlePromote = (item: PipelineItem) => {
+  const handlePromote = async (item: PipelineItem) => {
     setPromoting(item);
-    setPromoteInitial({
+    let initial: ContratoFormValues = {
       cliente: item.cliente,
       tipo: item.tipo as any,
       operadora_id: (item as any).operadora_id ?? null,
@@ -126,12 +124,31 @@ export default function Pipeline() {
       valor_mensal: Number(item.valor_mensal) || 0,
       proporcao_comissao: 0,
       data_vigencia: item.data_vigencia ?? null,
-      data_reajuste: item.data_vigencia ? addOneYear(item.data_vigencia) : null,
+      data_reajuste: item.data_vigencia ? addYearsIso(item.data_vigencia, 1) : null,
       numero_proposta: item.numero_proposta ?? null,
       observacoes: item.observacoes ?? null,
       status: "Ativo",
       dados_proposta: (item as any).dados_proposta ?? null,
-    });
+    };
+
+    if (item.contrato_id) {
+      const { data, error } = await supabase
+        .from("contratos")
+        .select("*")
+        .eq("id", item.contrato_id)
+        .maybeSingle();
+      if (error || !data) {
+        setPromoting(null);
+        toast({
+          title: "Não foi possível retomar a implantação",
+          description: error?.message ?? "O contrato vinculado não foi encontrado.",
+          variant: "destructive",
+        });
+        return;
+      }
+      initial = data as ContratoFormValues;
+    }
+    setPromoteInitial(initial);
     setPromoteOpen(true);
   };
 
@@ -143,12 +160,13 @@ export default function Pipeline() {
     if (contratoId && user) {
       const oldPrefix = `${user.id}/${promoting.id}`;
       const newPrefix = `${user.id}/contratos/${contratoId}`;
-      const { data: files, error: listError } = await supabase.storage
-        .from("pipeline-anexos")
-        .list(oldPrefix, { limit: 1000 });
-      if (listError) {
+      let files: Awaited<ReturnType<typeof listAllStorageFiles>> = [];
+      try {
+        files = await listAllStorageFiles(oldPrefix);
+      } catch {
         falhasMover = -1; // não foi possível nem listar
-      } else {
+      }
+      if (falhasMover === 0) {
         for (const f of files ?? []) {
           const { error: moveError } = await supabase.storage
             .from("pipeline-anexos")
@@ -198,7 +216,7 @@ export default function Pipeline() {
     if (!item || item.etapa === newEtapa) return;
 
     if (newEtapa === "Implantado") {
-      handlePromote(item);
+      void handlePromote(item);
       return;
     }
 
@@ -229,16 +247,17 @@ export default function Pipeline() {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Excluir esta proposta do pipeline?")) return;
-    // Remove os anexos do storage antes, para não deixar arquivos órfãos.
+    // Remove os anexos antes e interrompe se o Storage falhar.
     if (user) {
-      const prefix = `${user.id}/${id}`;
-      const { data: files } = await supabase.storage
-        .from("pipeline-anexos")
-        .list(prefix, { limit: 1000 });
-      if (files?.length) {
-        await supabase.storage
-          .from("pipeline-anexos")
-          .remove(files.map((f) => `${prefix}/${f.name}`));
+      try {
+        await removeStoragePrefix(`${user.id}/${id}`);
+      } catch (error) {
+        toast({
+          title: "A proposta não foi excluída",
+          description: error instanceof Error ? error.message : "Falha ao remover os anexos.",
+          variant: "destructive",
+        });
+        return;
       }
     }
     const { error } = await supabase.from("pipeline_contratos").delete().eq("id", id);
@@ -362,6 +381,7 @@ export default function Pipeline() {
         }}
         initial={promoteInitial}
         onSaved={onContratoSaved}
+        pipelineId={promoting?.id}
       />
     </div>
   );

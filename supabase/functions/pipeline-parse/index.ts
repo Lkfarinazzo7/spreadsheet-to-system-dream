@@ -112,15 +112,30 @@ serve(async (req) => {
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY não configurada");
 
     const { texto, operadoras = [] } = await req.json();
-    if (!texto || typeof texto !== "string" || texto.trim().length < 5) {
-      return new Response(JSON.stringify({ error: "Texto vazio ou muito curto" }), {
+    if (!texto || typeof texto !== "string" || texto.trim().length < 5 || texto.length > 50_000) {
+      return new Response(JSON.stringify({ error: "O texto deve ter entre 5 e 50.000 caracteres." }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const operadorasList = operadoras
-      .map((o: any) => `- ${o.nome}`)
+    const { data: quotaAllowed, error: quotaError } = await supabaseAuth.rpc("consume_pipeline_ai_quota");
+    if (quotaError || quotaAllowed !== true) {
+      return new Response(
+        JSON.stringify({ error: "Limite temporário de IA atingido. Tente novamente em alguns minutos." }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    const operadorasSeguras: Array<{ id: string; nome: string }> = Array.isArray(operadoras)
+      ? operadoras
+          .filter((o): o is { id: string; nome: string } =>
+            !!o && typeof o === "object" && typeof o.id === "string" && typeof o.nome === "string")
+          .slice(0, 200)
+          .map((o) => ({ id: o.id.slice(0, 100), nome: o.nome.slice(0, 200) }))
+      : [];
+    const operadorasList = operadorasSeguras
+      .map((o) => `- ${o.nome}`)
       .join("\n");
 
     const systemPrompt = `Você extrai dados de propostas de planos de saúde a partir de texto livre em português brasileiro.
@@ -173,8 +188,7 @@ Se identificar a operadora, retorne o nome o mais próximo possível dessa lista
           { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
-      const t = await aiResp.text();
-      console.error("AI gateway error:", aiResp.status, t);
+      console.error("AI gateway error status:", aiResp.status);
       return new Response(JSON.stringify({ error: "Erro no gateway de IA" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -193,16 +207,20 @@ Se identificar a operadora, retorne o nome o mais próximo possível dessa lista
       }
     }
 
-    const operadora_id = matchOperadora(parsed.operadora_nome, operadoras);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) parsed = {};
+    const operadora_id = matchOperadora(
+      typeof parsed.operadora_nome === "string" ? parsed.operadora_nome : undefined,
+      operadorasSeguras,
+    );
 
     return new Response(
       JSON.stringify({ extracted: parsed, operadora_id }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e) {
-    console.error("pipeline-parse error:", e);
+    console.error("pipeline-parse error:", e instanceof Error ? e.message : String(e));
     return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "Erro desconhecido" }),
+      JSON.stringify({ error: "Não foi possível processar o texto agora." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
