@@ -252,8 +252,9 @@ export function ContratoForm({
       }));
 
       let contratoId: string | null = null;
+      const rpc = supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<{ data: any; error: any }>;
       if (pipelineId) {
-        const { data, error } = await supabase.rpc("implantar_pipeline_com_contrato", {
+        const { data, error } = await rpc("implantar_pipeline_com_contrato", {
           p_pipeline_id: pipelineId,
           p_contrato: payload as Json,
           p_comissoes: commissionPayload as Json,
@@ -262,7 +263,7 @@ export function ContratoForm({
         if (error) throw error;
         contratoId = data;
       } else {
-        const { data, error } = await supabase.rpc("save_contrato_com_comissoes", {
+        const { data, error } = await rpc("save_contrato_com_comissoes", {
           p_contrato: payload as Json,
           p_comissoes: commissionPayload as Json,
           p_remover_comissoes: removedComissoes,

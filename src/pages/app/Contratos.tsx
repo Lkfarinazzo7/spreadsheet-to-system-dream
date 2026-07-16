@@ -36,7 +36,7 @@ export default function Contratos() {
           .from("contratos")
           .select("*, operadora:operadoras(nome), canal:canais_venda(nome)")
           .order("created_at", { ascending: false })
-          .range(from, to),
+          .range(from, to) as any,
       );
       setRows(data);
     } catch (error) {
