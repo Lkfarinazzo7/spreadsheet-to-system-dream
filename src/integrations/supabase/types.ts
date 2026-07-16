@@ -267,7 +267,6 @@ export type Database = {
         Row: {
           canal_id: string | null
           cliente: string
-          contrato_id: string | null
           created_at: string
           dados_proposta: Json | null
           data_revisao: string | null
@@ -289,7 +288,6 @@ export type Database = {
         Insert: {
           canal_id?: string | null
           cliente: string
-          contrato_id?: string | null
           created_at?: string
           dados_proposta?: Json | null
           data_revisao?: string | null
@@ -311,7 +309,6 @@ export type Database = {
         Update: {
           canal_id?: string | null
           cliente?: string
-          contrato_id?: string | null
           created_at?: string
           dados_proposta?: Json | null
           data_revisao?: string | null
@@ -336,13 +333,6 @@ export type Database = {
             columns: ["canal_id"]
             isOneToOne: false
             referencedRelation: "canais_venda"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "pipeline_contratos_contrato_id_fkey"
-            columns: ["contrato_id"]
-            isOneToOne: true
-            referencedRelation: "contratos"
             referencedColumns: ["id"]
           },
           {
@@ -380,27 +370,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      consume_pipeline_ai_quota: {
-        Args: Record<PropertyKey, never>
-        Returns: boolean
-      }
-      implantar_pipeline_com_contrato: {
-        Args: {
-          p_comissoes?: Json
-          p_contrato: Json
-          p_pipeline_id: string
-          p_remover_comissoes?: string[]
-        }
-        Returns: string
-      }
-      save_contrato_com_comissoes: {
-        Args: {
-          p_comissoes?: Json
-          p_contrato: Json
-          p_remover_comissoes?: string[]
-        }
-        Returns: string
-      }
+      [_ in never]: never
     }
     Enums: {
       etapa_pipeline:
