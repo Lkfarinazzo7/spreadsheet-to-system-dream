@@ -52,8 +52,6 @@ export function DadosPropostaEditor({
     if (target > titulares.length) {
       const add = Array.from({ length: target - titulares.length }, emptyTitular);
       setDP({ titulares: [...titulares, ...add] });
-    } else {
-      setDP({ titulares: titulares.slice(0, target) });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dp.qtd_titulares]);
@@ -65,6 +63,7 @@ export function DadosPropostaEditor({
   const setDepCount = (titIdx: number, count: number) => {
     const t = titulares[titIdx];
     const cur = t.dependentes ?? [];
+    if (count < cur.length && !window.confirm("Reduzir a quantidade excluirá os últimos dependentes preenchidos. Continuar?")) return;
     const next = count > cur.length
       ? [...cur, ...Array.from({ length: count - cur.length }, emptyDependente)]
       : cur.slice(0, count);
@@ -106,15 +105,22 @@ export function DadosPropostaEditor({
         </div>
         <div className="space-y-1.5">
           <Label>Vidas</Label>
-          <Input type="number" min={0} value={dp.vidas ?? ""} onChange={(e) => setDP({ vidas: e.target.value === "" ? undefined : Number(e.target.value) })} />
+          <Input type="number" min={0} value={dp.vidas ?? ""} onChange={(e) => setDP({ vidas: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)) })} />
         </div>
         <div className="space-y-1.5">
           <Label>Titulares</Label>
-          <Input type="number" min={0} value={dp.qtd_titulares ?? ""} onChange={(e) => setDP({ qtd_titulares: e.target.value === "" ? undefined : Number(e.target.value) })} />
+          <Input type="number" min={0} value={dp.qtd_titulares ?? ""} onChange={(e) => {
+            const next = e.target.value === "" ? undefined : Math.max(0, Number(e.target.value));
+            if (next != null && next < titulares.length && !window.confirm("Reduzir a quantidade excluirá os últimos titulares preenchidos. Continuar?")) return;
+            setDP({
+              qtd_titulares: next,
+              ...(next != null && next < titulares.length ? { titulares: titulares.slice(0, next) } : {}),
+            });
+          }} />
         </div>
         <div className="space-y-1.5">
           <Label>Dependentes</Label>
-          <Input type="number" min={0} value={dp.qtd_dependentes ?? ""} onChange={(e) => setDP({ qtd_dependentes: e.target.value === "" ? undefined : Number(e.target.value) })} />
+          <Input type="number" min={0} value={dp.qtd_dependentes ?? ""} onChange={(e) => setDP({ qtd_dependentes: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)) })} />
         </div>
         {tipo === "PJ" && (
           <div className="space-y-1.5 col-span-2 md:col-span-3">

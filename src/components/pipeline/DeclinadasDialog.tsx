@@ -5,6 +5,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { RotateCcw, Trash2, Ban } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { removeStoragePrefix } from "@/lib/storage";
+import { fetchAllPages } from "@/lib/supabasePaging";
 
 type Item = {
   id: string;
@@ -27,22 +30,25 @@ export function DeclinadasDialog({
   onChanged: () => void;
 }) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("pipeline_contratos")
-      .select("id, cliente, numero_proposta, valor_mensal, motivo_declinio, declinada_em, etapa, operadora:operadoras(nome)")
-      .eq("declinada", true)
-      .order("declinada_em", { ascending: false });
-    if (error) {
-      toast({ title: "Erro", description: error.message, variant: "destructive" });
-    } else {
-      setItems((data as any) ?? []);
+    try {
+      const data = await fetchAllPages<Item>((from, to) => supabase
+        .from("pipeline_contratos")
+        .select("id, cliente, numero_proposta, valor_mensal, motivo_declinio, declinada_em, etapa, operadora:operadoras(nome)")
+        .eq("declinada", true)
+        .order("declinada_em", { ascending: false })
+        .range(from, to));
+      setItems(data);
+    } catch (error) {
+      toast({ title: "Erro", description: error instanceof Error ? error.message : "Falha ao carregar propostas.", variant: "destructive" });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -62,6 +68,18 @@ export function DeclinadasDialog({
 
   const excluir = async (id: string) => {
     if (!confirm("Excluir definitivamente esta proposta?")) return;
+    if (user) {
+      try {
+        await removeStoragePrefix(`${user.id}/${id}`);
+      } catch (error) {
+        toast({
+          title: "A proposta não foi excluída",
+          description: error instanceof Error ? error.message : "Falha ao remover os anexos.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
     const { error } = await supabase.from("pipeline_contratos").delete().eq("id", id);
     if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
     toast({ title: "Proposta excluída" });

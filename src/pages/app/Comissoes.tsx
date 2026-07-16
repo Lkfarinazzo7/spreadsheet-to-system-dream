@@ -12,8 +12,9 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { formatCurrency, formatDate, localIso } from "@/lib/format";
+import { formatCurrency, formatDate, isValidIsoDate, localIso } from "@/lib/format";
 import { Plus, Check, Trash2, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { fetchAllPages } from "@/lib/supabasePaging";
 
 type Comissao = {
   id: string;
@@ -41,15 +42,24 @@ export default function Comissoes() {
   const [form, setForm] = useState<Partial<Comissao>>({ parcela: 1, tipo: "Bancaria", valor: 0, pago: false });
 
   const load = async () => {
-    const [c, k] = await Promise.all([
-      supabase
-        .from("comissoes")
-        .select("*, contrato:contratos(cliente,valor_mensal,proporcao_comissao)")
-        .order("mes_previsto", { ascending: false }),
-      supabase.from("contratos").select("id,cliente").order("cliente"),
-    ]);
-    setRows((c.data as any) ?? []);
-    setContratos((k.data as any) ?? []);
+    try {
+      const [c, k] = await Promise.all([
+        fetchAllPages<Comissao>((from, to) =>
+          supabase
+            .from("comissoes")
+            .select("*, contrato:contratos(cliente,valor_mensal,proporcao_comissao)")
+            .order("mes_previsto", { ascending: false })
+            .range(from, to),
+        ),
+        fetchAllPages<{ id: string; cliente: string }>((from, to) =>
+          supabase.from("contratos").select("id,cliente").order("cliente").range(from, to),
+        ),
+      ]);
+      setRows(c);
+      setContratos(k);
+    } catch (error) {
+      toast({ title: "Erro ao carregar comissões", description: error instanceof Error ? error.message : "Falha na consulta.", variant: "destructive" });
+    }
   };
 
   useEffect(() => {
@@ -107,9 +117,19 @@ export default function Comissoes() {
 
   const togglePago = async (r: Comissao) => {
     const novo = !r.pago;
+    let dataPagamento: string | null = null;
+    if (novo) {
+      const resposta = window.prompt("Data em que a comissão foi recebida (aaaa-mm-dd):", localIso());
+      if (resposta === null) return;
+      if (!isValidIsoDate(resposta.trim())) {
+        toast({ title: "Data inválida", description: "Use o formato aaaa-mm-dd.", variant: "destructive" });
+        return;
+      }
+      dataPagamento = resposta.trim();
+    }
     const { error } = await supabase
       .from("comissoes")
-      .update({ pago: novo, data_pagamento: novo ? localIso() : null })
+      .update({ pago: novo, data_pagamento: dataPagamento })
       .eq("id", r.id);
     if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
     load();
@@ -117,13 +137,29 @@ export default function Comissoes() {
 
   const remove = async (id: string) => {
     if (!confirm("Excluir parcela?")) return;
-    await supabase.from("comissoes").delete().eq("id", id);
+    const { error } = await supabase.from("comissoes").delete().eq("id", id);
+    if (error) {
+      toast({ title: "Erro ao excluir parcela", description: error.message, variant: "destructive" });
+      return;
+    }
     load();
   };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !form.contrato_id || !form.mes_previsto) return;
+    if (Number(form.valor) < 0 || Number(form.parcela) < 1) {
+      toast({ title: "Valores inválidos", variant: "destructive" });
+      return;
+    }
+    if (form.pago && !isValidIsoDate(form.data_pagamento)) {
+      toast({ title: "Informe a data real do recebimento", variant: "destructive" });
+      return;
+    }
+    if (rows.some((row) => row.contrato_id === form.contrato_id && row.tipo === form.tipo && row.parcela === Number(form.parcela))) {
+      toast({ title: "Parcela duplicada", description: "Já existe uma parcela desse tipo e número para o contrato.", variant: "destructive" });
+      return;
+    }
     const { error } = await supabase.from("comissoes").insert({
       user_id: user.id,
       contrato_id: form.contrato_id,
@@ -131,12 +167,13 @@ export default function Comissoes() {
       tipo: (form.tipo as any) ?? "Bancaria",
       mes_previsto: form.mes_previsto,
       valor: Number(form.valor ?? 0),
-      pago: false,
+      pago: !!form.pago,
+      data_pagamento: form.pago ? form.data_pagamento : null,
     });
     if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
     toast({ title: "Parcela criada" });
     setOpen(false);
-    setForm({ parcela: 1, tipo: "Bancaria", valor: 0, pago: false });
+    setForm({ parcela: 1, tipo: "Bancaria", valor: 0, pago: false, data_pagamento: null });
     load();
   };
 
@@ -320,6 +357,20 @@ export default function Comissoes() {
                 <Label>Valor (R$)</Label>
                 <Input type="number" step="0.01" value={form.valor ?? 0} onChange={(e) => setForm((p) => ({ ...p, valor: Number(e.target.value) }))} />
               </div>
+              <label className="col-span-2 flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={!!form.pago}
+                  onChange={(e) => setForm((p) => ({ ...p, pago: e.target.checked, data_pagamento: e.target.checked ? localIso() : null }))}
+                />
+                Já recebida
+              </label>
+              {form.pago && (
+                <div className="col-span-2 space-y-1.5">
+                  <Label>Data real do recebimento</Label>
+                  <Input type="date" required value={form.data_pagamento ?? ""} onChange={(e) => setForm((p) => ({ ...p, data_pagamento: e.target.value }))} />
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>

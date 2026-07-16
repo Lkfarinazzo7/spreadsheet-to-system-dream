@@ -8,10 +8,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ContratoForm, ContratoFormValues } from "@/components/contratos/ContratoForm";
-import { Plus, Pencil, Trash2, Search, Download } from "lucide-react";
+import { Plus, Pencil, Archive, Search, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/format";
-import * as XLSX from "xlsx";
+import { fetchAllPages } from "@/lib/supabasePaging";
+import { downloadSpreadsheet } from "@/lib/spreadsheet";
 
 type Row = ContratoFormValues & {
   id: string;
@@ -29,11 +30,22 @@ export default function Contratos() {
   const [status, setStatus] = useState<string>("all");
 
   const load = async () => {
-    const { data } = await supabase
-      .from("contratos")
-      .select("*, operadora:operadoras(nome), canal:canais_venda(nome)")
-      .order("created_at", { ascending: false });
-    setRows((data as any) ?? []);
+    try {
+      const data = await fetchAllPages<Row>((from, to) =>
+        supabase
+          .from("contratos")
+          .select("*, operadora:operadoras(nome), canal:canais_venda(nome)")
+          .order("created_at", { ascending: false })
+          .range(from, to),
+      );
+      setRows(data);
+    } catch (error) {
+      toast({
+        title: "Erro ao carregar contratos",
+        description: error instanceof Error ? error.message : "Falha na consulta.",
+        variant: "destructive",
+      });
+    }
   };
 
   useEffect(() => {
@@ -50,16 +62,15 @@ export default function Contratos() {
     });
   }, [rows, tipo, status, q]);
 
-  const remove = async (id: string) => {
-    if (!confirm("Excluir este contrato? As comissões vinculadas também serão removidas.")) return;
-    // As parcelas caem junto via ON DELETE CASCADE no banco — sem janela de inconsistência.
-    const { error } = await supabase.from("contratos").delete().eq("id", id);
+  const archive = async (id: string) => {
+    if (!confirm("Arquivar este contrato? As comissões e os anexos serão preservados.")) return;
+    const { error } = await supabase.from("contratos").update({ status: "Cancelado" }).eq("id", id);
     if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
-    toast({ title: "Contrato excluído" });
+    toast({ title: "Contrato arquivado" });
     load();
   };
 
-  const exportXlsx = () => {
+  const exportXlsx = async () => {
     const data = filtered.map((r) => ({
       Cliente: r.cliente,
       Proposta: r.numero_proposta,
@@ -72,10 +83,11 @@ export default function Contratos() {
       "Reajuste": r.data_reajuste,
       Status: r.status,
     }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Contratos");
-    XLSX.writeFile(wb, "contratos.xlsx");
+    try {
+      await downloadSpreadsheet([{ name: "Contratos", rows: data }], "contratos.xlsx");
+    } catch (error) {
+      toast({ title: "Erro ao exportar", description: error instanceof Error ? error.message : "Falha ao gerar Excel.", variant: "destructive" });
+    }
   };
 
   const statusVariant = (s: string) =>
@@ -88,7 +100,7 @@ export default function Contratos() {
         description="Vendas fechadas, planos ativos e histórico"
         actions={
           <>
-            <Button variant="outline" onClick={exportXlsx}>
+            <Button variant="outline" onClick={() => void exportXlsx()}>
               <Download className="h-4 w-4" /> Exportar
             </Button>
             <Button onClick={() => { setEditing(null); setOpen(true); }}>
@@ -167,8 +179,8 @@ export default function Contratos() {
                       <Button size="icon" variant="ghost" onClick={() => { setEditing(r as any); setOpen(true); }}>
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button size="icon" variant="ghost" onClick={() => remove(r.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
+                      <Button size="icon" variant="ghost" onClick={() => archive(r.id)} title="Arquivar contrato">
+                        <Archive className="h-4 w-4 text-muted-foreground" />
                       </Button>
                     </div>
                   </TableCell>

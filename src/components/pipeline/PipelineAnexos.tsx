@@ -10,6 +10,7 @@ import {
   FileImage, File as FileIcon, Paperclip, ExternalLink, Archive, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import JSZip from "jszip";
+import { listAllStorageFiles } from "@/lib/storage";
 
 import "react-pdf/dist/Page/AnnotationLayer.css";
 
@@ -45,7 +46,9 @@ function formatSize(bytes: number) {
 }
 
 function cleanName(n: string) {
-  return n.replace(/^\d+-/, "");
+  return n
+    .replace(/^\d+-[0-9a-f-]{36}-/i, "")
+    .replace(/^\d+-/, "");
 }
 
 function mimeTypeFromName(name: string) {
@@ -134,25 +137,32 @@ export function PipelineAnexos({
       return;
     }
     setLoading(true);
-    const { data, error } = await supabase.storage
-      .from("pipeline-anexos")
-      .list(currentPrefix, { limit: 100, sortBy: { column: "updated_at", order: "desc" } });
+    let data;
+    let error: Error | null = null;
+    try {
+      data = await listAllStorageFiles(currentPrefix);
+    } catch (err) {
+      error = err instanceof Error ? err : new Error("Falha ao listar anexos");
+    }
 
     if (requestId !== loadRequestRef.current || activePrefixRef.current !== currentPrefix) {
       return;
     }
 
     setLoading(false);
-    if (error) { console.error(error); return; }
+    if (error) {
+      toast({ title: "Erro ao carregar anexos", description: error.message, variant: "destructive" });
+      return;
+    }
     setFiles(
       (data ?? []).map((f) => ({
         name: f.name,
         fullPath: `${currentPrefix}/${f.name}`,
-        size: (f as any).metadata?.size ?? 0,
-        updated_at: (f as any).updated_at,
+        size: f.metadata?.size ?? 0,
+        updated_at: f.updated_at ?? undefined,
       })),
     );
-  }, [prefix, user]);
+  }, [prefix, user, toast]);
 
   useEffect(() => {
     load();
@@ -162,19 +172,37 @@ export function PipelineAnexos({
     const list = e.target.files;
     if (!list || !list.length || !user || !prefix) return;
     const uploadPrefix = prefix;
+    const selected = Array.from(list);
+    if (selected.length > 20) {
+      toast({ title: "Muitos arquivos", description: "Envie no máximo 20 arquivos por vez.", variant: "destructive" });
+      e.target.value = "";
+      return;
+    }
+    const tooLarge = selected.find((file) => file.size > 25 * 1024 * 1024);
+    if (tooLarge) {
+      toast({ title: "Arquivo muito grande", description: `${tooLarge.name} ultrapassa 25 MB.`, variant: "destructive" });
+      e.target.value = "";
+      return;
+    }
     setUploading(true);
+    let uploaded = 0;
     try {
-      for (const file of Array.from(list)) {
-        const safe = file.name.replace(/[^\w.\-]+/g, "_");
+      for (const file of selected) {
+        const safe = file.name.replace(/[^\w.-]+/g, "_");
         const path = `${uploadPrefix}/${Date.now()}-${crypto.randomUUID()}-${safe}`;
         const { error } = await supabase.storage.from("pipeline-anexos").upload(path, file);
         if (error) throw error;
+        uploaded++;
       }
       toast({ title: "Arquivos enviados" });
-      if (activePrefixRef.current === uploadPrefix) await load();
     } catch (err: any) {
-      toast({ title: "Erro no upload", description: err.message, variant: "destructive" });
+      toast({
+        title: "Upload incompleto",
+        description: `${uploaded} de ${selected.length} arquivo(s) enviados. ${err.message}`,
+        variant: "destructive",
+      });
     } finally {
+      if (uploaded > 0 && activePrefixRef.current === uploadPrefix) await load();
       setUploading(false);
       e.target.value = "";
     }
@@ -240,13 +268,37 @@ export function PipelineAnexos({
     setZipping(true);
     try {
       const zip = new JSZip();
+      const usedNames = new Map<string, number>();
+      let failures = 0;
       for (const f of files) {
         const { data, error } = await supabase.storage.from("pipeline-anexos").download(f.fullPath);
-        if (error || !data) continue;
-        zip.file(cleanName(f.name), data);
+        if (error || !data) {
+          failures++;
+          continue;
+        }
+        const original = cleanName(f.name);
+        const count = usedNames.get(original) ?? 0;
+        usedNames.set(original, count + 1);
+        const dot = original.lastIndexOf(".");
+        const name = count === 0
+          ? original
+          : dot > 0
+            ? `${original.slice(0, dot)} (${count + 1})${original.slice(dot)}`
+            : `${original} (${count + 1})`;
+        zip.file(name, data);
       }
+      if (failures === files.length) throw new Error("Nenhum anexo pôde ser baixado.");
       const blob = await zip.generateAsync({ type: "blob" });
       await downloadBlob(blob, "anexos.zip");
+      if (failures > 0) {
+        toast({ title: "Download parcial", description: `${failures} anexo(s) não puderam ser incluídos.`, variant: "destructive" });
+      }
+    } catch (error) {
+      toast({
+        title: "Erro ao baixar anexos",
+        description: error instanceof Error ? error.message : "Falha ao gerar o arquivo ZIP.",
+        variant: "destructive",
+      });
     } finally {
       setZipping(false);
     }

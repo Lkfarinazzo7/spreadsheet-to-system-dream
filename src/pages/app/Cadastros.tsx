@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { useAuth } from "@/hooks/useAuth";
-import { Trash2, Plus } from "lucide-react";
+import { Archive, Plus, RotateCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-type Item = { id: string; nome: string };
+type Item = { id: string; nome: string; ativo: boolean };
 
 function CrudList({ table, title }: { table: "operadoras" | "canais_venda" | "categorias_plano"; title: string }) {
   const { user } = useAuth();
@@ -17,8 +18,12 @@ function CrudList({ table, title }: { table: "operadoras" | "canais_venda" | "ca
   const [nome, setNome] = useState("");
 
   const load = async () => {
-    const { data } = await supabase.from(table).select("id,nome").order("nome");
-    setItems((data as any) ?? []);
+    const { data, error } = await supabase.from(table).select("id,nome,ativo").order("nome");
+    if (error) {
+      toast({ title: "Erro ao carregar cadastros", description: error.message, variant: "destructive" });
+      return;
+    }
+    setItems((data as Item[]) ?? []);
   };
 
   useEffect(() => { load(); }, []);
@@ -32,8 +37,14 @@ function CrudList({ table, title }: { table: "operadoras" | "canais_venda" | "ca
     load();
   };
 
-  const remove = async (id: string) => {
-    await supabase.from(table).delete().eq("id", id);
+  const toggleActive = async (item: Item) => {
+    if (item.ativo && !confirm(`Desativar "${item.nome}"? O histórico dos contratos será preservado.`)) return;
+    const { error } = await supabase.from(table).update({ ativo: !item.ativo }).eq("id", item.id);
+    if (error) {
+      toast({ title: "Erro", description: error.message, variant: "destructive" });
+      return;
+    }
+    toast({ title: item.ativo ? "Cadastro desativado" : "Cadastro reativado" });
     load();
   };
 
@@ -47,10 +58,15 @@ function CrudList({ table, title }: { table: "operadoras" | "canais_venda" | "ca
         </form>
         <ul className="space-y-1">
           {items.map((i) => (
-            <li key={i.id} className="flex items-center justify-between px-2 py-1.5 rounded hover:bg-muted/50 text-sm">
-              <span>{i.nome}</span>
-              <Button size="icon" variant="ghost" onClick={() => remove(i.id)}>
-                <Trash2 className="h-4 w-4 text-destructive" />
+            <li key={i.id} className={`flex items-center justify-between px-2 py-1.5 rounded hover:bg-muted/50 text-sm ${i.ativo ? "" : "opacity-60"}`}>
+              <span className="flex items-center gap-2">
+                {i.nome}
+                {!i.ativo && <Badge variant="secondary">Inativo</Badge>}
+              </span>
+              <Button size="icon" variant="ghost" onClick={() => toggleActive(i)} title={i.ativo ? "Desativar" : "Reativar"}>
+                {i.ativo
+                  ? <Archive className="h-4 w-4 text-muted-foreground" />
+                  : <RotateCcw className="h-4 w-4 text-success" />}
               </Button>
             </li>
           ))}

@@ -7,16 +7,39 @@ import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { formatCurrency, localIso } from "@/lib/format";
 import { FileSpreadsheet, FileText } from "lucide-react";
-import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { useToast } from "@/hooks/use-toast";
+import { fetchAllPages } from "@/lib/supabasePaging";
+import { downloadSpreadsheet } from "@/lib/spreadsheet";
+
+type ReportComissao = {
+  pago: boolean;
+  data_pagamento: string | null;
+  mes_previsto: string;
+  valor: number;
+  contrato?: {
+    cliente: string;
+    operadora?: { nome: string } | null;
+    canal?: { nome: string } | null;
+  } | null;
+};
+
+type ReportDespesa = {
+  pago: boolean;
+  data_pagamento: string | null;
+  data: string;
+  valor: number;
+};
 
 export default function Relatorios() {
+  const { toast } = useToast();
   const today = new Date();
   const [from, setFrom] = useState(localIso(new Date(today.getFullYear(), today.getMonth() - 5, 1)));
   const [to, setTo] = useState(localIso(new Date(today.getFullYear(), today.getMonth() + 1, 0)));
-  const [comissoes, setComissoes] = useState<any[]>([]);
-  const [despesas, setDespesas] = useState<any[]>([]);
+  const [comissoes, setComissoes] = useState<ReportComissao[]>([]);
+  const [despesas, setDespesas] = useState<ReportDespesa[]>([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     document.title = "Relatórios — Corretor SaaS";
@@ -24,18 +47,38 @@ export default function Relatorios() {
 
   useEffect(() => {
     (async () => {
+      if (from > to) {
+        setComissoes([]);
+        setDespesas([]);
+        setLoading(false);
+        toast({ title: "Período inválido", description: "A data inicial deve ser anterior à final.", variant: "destructive" });
+        return;
+      }
+      setLoading(true);
       // Busca linhas que pertencem ao período por competência (mes_previsto / data)
       // OU por caixa (data_pagamento), para alimentar as duas visões sem re-consultar.
-      const [c, d] = await Promise.all([
-        supabase.from("comissoes").select("*, contrato:contratos(cliente, operadora:operadoras(nome), canal:canais_venda(nome))")
-          .or(`and(mes_previsto.gte.${from},mes_previsto.lte.${to}),and(data_pagamento.gte.${from},data_pagamento.lte.${to})`),
-        supabase.from("despesas").select("*")
-          .or(`and(data.gte.${from},data.lte.${to}),and(data_pagamento.gte.${from},data_pagamento.lte.${to})`),
-      ]);
-      setComissoes((c.data as any) ?? []);
-      setDespesas((d.data as any) ?? []);
+      try {
+        const [c, d] = await Promise.all([
+          fetchAllPages<ReportComissao>((start, end) => supabase.from("comissoes")
+            .select("pago,data_pagamento,mes_previsto,valor,contrato:contratos(cliente, operadora:operadoras(nome), canal:canais_venda(nome))")
+            .or(`and(mes_previsto.gte.${from},mes_previsto.lte.${to}),and(data_pagamento.gte.${from},data_pagamento.lte.${to})`)
+            .range(start, end)),
+          fetchAllPages<ReportDespesa>((start, end) => supabase.from("despesas")
+            .select("pago,data_pagamento,data,valor")
+            .or(`and(data.gte.${from},data.lte.${to}),and(data_pagamento.gte.${from},data_pagamento.lte.${to})`)
+            .range(start, end)),
+        ]);
+        setComissoes(c);
+        setDespesas(d);
+      } catch (error) {
+        setComissoes([]);
+        setDespesas([]);
+        toast({ title: "Erro ao carregar relatórios", description: error instanceof Error ? error.message : "Falha na consulta.", variant: "destructive" });
+      } finally {
+        setLoading(false);
+      }
     })();
-  }, [from, to]);
+  }, [from, to, toast]);
 
   const inRange = (v: string | null | undefined) => !!v && v >= from && v <= to;
 
@@ -90,19 +133,24 @@ export default function Relatorios() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [comissoes, from, to]);
 
-  const exportXlsx = () => {
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([
+  const exportXlsx = async () => {
+    const resumo = [
       { Indicador: "REALIZADO (caixa) — Comissão recebida", Valor: totals.recebido },
       { Indicador: "REALIZADO (caixa) — Despesas pagas", Valor: totals.despPaga },
       { Indicador: "REALIZADO (caixa) — Lucro", Valor: totals.lucro },
-      { Indicador: "PREVISTO (competência) — Comissão prevista", Valor: totals.previsto },
-      { Indicador: "PREVISTO (competência) — Despesas previstas", Valor: totals.despPrevista },
-      { Indicador: "PREVISTO (competência) — Resultado", Valor: totals.resultadoPrevisto },
-    ]), "Resumo");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(porOperadora), "Por operadora");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(porCanal), "Por canal");
-    XLSX.writeFile(wb, `relatorio_${from}_${to}.xlsx`);
+      { Indicador: "COMPETÊNCIA — Comissão total", Valor: totals.previsto },
+      { Indicador: "COMPETÊNCIA — Despesas totais", Valor: totals.despPrevista },
+      { Indicador: "COMPETÊNCIA — Resultado", Valor: totals.resultadoPrevisto },
+    ];
+    try {
+      await downloadSpreadsheet([
+        { name: "Resumo", rows: resumo },
+        { name: "Por operadora", rows: porOperadora },
+        { name: "Por canal", rows: porCanal },
+      ], `relatorio_${from}_${to}.xlsx`);
+    } catch (error) {
+      toast({ title: "Erro ao exportar", description: error instanceof Error ? error.message : "Falha ao gerar Excel.", variant: "destructive" });
+    }
   };
 
   const exportPdf = () => {
@@ -118,9 +166,9 @@ export default function Relatorios() {
         ["Realizado (caixa) — Comissão recebida", formatCurrency(totals.recebido)],
         ["Realizado (caixa) — Despesas pagas", formatCurrency(totals.despPaga)],
         ["Realizado (caixa) — Lucro", formatCurrency(totals.lucro)],
-        ["Previsto (competência) — Comissão prevista", formatCurrency(totals.previsto)],
-        ["Previsto (competência) — Despesas previstas", formatCurrency(totals.despPrevista)],
-        ["Previsto (competência) — Resultado", formatCurrency(totals.resultadoPrevisto)],
+        ["Competência — Comissão total", formatCurrency(totals.previsto)],
+        ["Competência — Despesas totais", formatCurrency(totals.despPrevista)],
+        ["Competência — Resultado", formatCurrency(totals.resultadoPrevisto)],
       ],
     });
     autoTable(doc, {
@@ -137,6 +185,7 @@ export default function Relatorios() {
   return (
     <div>
       <PageHeader title="Relatórios" description="Resumo financeiro e exportação" />
+      {loading && <div className="mb-3 text-sm text-muted-foreground">Carregando relatório…</div>}
       <Card className="mb-4">
         <CardContent className="p-3 flex flex-wrap gap-3 items-end">
           <div className="space-y-1.5">
@@ -148,7 +197,7 @@ export default function Relatorios() {
             <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
           </div>
           <div className="ml-auto flex gap-2">
-            <Button variant="outline" onClick={exportXlsx}><FileSpreadsheet className="h-4 w-4" />Excel</Button>
+            <Button variant="outline" onClick={() => void exportXlsx()}><FileSpreadsheet className="h-4 w-4" />Excel</Button>
             <Button onClick={exportPdf}><FileText className="h-4 w-4" />PDF</Button>
           </div>
         </CardContent>
@@ -170,12 +219,12 @@ export default function Relatorios() {
         ))}
       </div>
 
-      <div className="mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">Previsto (competência)</div>
+      <div className="mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">Competência</div>
       <div className="grid gap-4 grid-cols-3 mb-4">
         {[
-          { label: "Comissão prevista", value: totals.previsto, accent: "text-primary" },
-          { label: "Despesas previstas", value: totals.despPrevista, accent: "text-destructive" },
-          { label: "Resultado previsto", value: totals.resultadoPrevisto, accent: totals.resultadoPrevisto >= 0 ? "text-success" : "text-destructive" },
+          { label: "Comissão total", value: totals.previsto, accent: "text-primary" },
+          { label: "Despesas totais", value: totals.despPrevista, accent: "text-destructive" },
+          { label: "Resultado por competência", value: totals.resultadoPrevisto, accent: totals.resultadoPrevisto >= 0 ? "text-success" : "text-destructive" },
         ].map((k) => (
           <Card key={k.label}>
             <CardContent className="p-4">

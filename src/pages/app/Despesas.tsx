@@ -10,8 +10,9 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { PageHeader } from "@/components/layout/PageHeader";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { formatCurrency, formatDate, localIso } from "@/lib/format";
+import { formatCurrency, formatDate, isValidIsoDate, localIso } from "@/lib/format";
 import { Plus, Trash2, Check } from "lucide-react";
+import { fetchAllPages } from "@/lib/supabasePaging";
 
 type Despesa = { id: string; descricao: string; categoria: string | null; valor: number; data: string; pago: boolean; data_pagamento: string | null };
 
@@ -23,8 +24,14 @@ export default function Despesas() {
   const [form, setForm] = useState<Partial<Despesa>>({ descricao: "", valor: 0, data: localIso(), pago: false });
 
   const load = async () => {
-    const { data } = await supabase.from("despesas").select("*").order("data", { ascending: false });
-    setRows((data as any) ?? []);
+    try {
+      const data = await fetchAllPages<Despesa>((from, to) =>
+        supabase.from("despesas").select("*").order("data", { ascending: false }).range(from, to),
+      );
+      setRows(data);
+    } catch (error) {
+      toast({ title: "Erro ao carregar despesas", description: error instanceof Error ? error.message : "Falha na consulta.", variant: "destructive" });
+    }
   };
 
   useEffect(() => {
@@ -35,6 +42,14 @@ export default function Despesas() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    if (Number(form.valor) < 0) {
+      toast({ title: "Valor inválido", description: "A despesa não pode ser negativa.", variant: "destructive" });
+      return;
+    }
+    if (form.pago && !isValidIsoDate(form.data_pagamento)) {
+      toast({ title: "Data de pagamento obrigatória", variant: "destructive" });
+      return;
+    }
     const { error } = await supabase.from("despesas").insert({
       user_id: user.id,
       descricao: form.descricao!,
@@ -42,20 +57,29 @@ export default function Despesas() {
       valor: Number(form.valor ?? 0),
       data: form.data!,
       pago: !!form.pago,
-      // Se já entra como paga, a melhor aproximação da data de pagamento é a própria data da despesa.
-      data_pagamento: form.pago ? form.data! : null,
+      data_pagamento: form.pago ? form.data_pagamento! : null,
     });
     if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
     setOpen(false);
-    setForm({ descricao: "", valor: 0, data: localIso(), pago: false });
+    setForm({ descricao: "", valor: 0, data: localIso(), pago: false, data_pagamento: null });
     load();
   };
 
   const togglePago = async (r: Despesa) => {
     const novo = !r.pago;
+    let dataPagamento: string | null = null;
+    if (novo) {
+      const resposta = window.prompt("Data em que a despesa foi paga (aaaa-mm-dd):", localIso());
+      if (resposta === null) return;
+      if (!isValidIsoDate(resposta.trim())) {
+        toast({ title: "Data inválida", description: "Use o formato aaaa-mm-dd.", variant: "destructive" });
+        return;
+      }
+      dataPagamento = resposta.trim();
+    }
     const { error } = await supabase
       .from("despesas")
-      .update({ pago: novo, data_pagamento: novo ? localIso() : null })
+      .update({ pago: novo, data_pagamento: dataPagamento })
       .eq("id", r.id);
     if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
     load();
@@ -149,6 +173,17 @@ export default function Despesas() {
                   Já pago
                 </label>
               </div>
+              {form.pago && (
+                <div className="space-y-1.5 col-span-2">
+                  <Label>Data real do pagamento</Label>
+                  <Input
+                    type="date"
+                    required
+                    value={form.data_pagamento ?? ""}
+                    onChange={(e) => setForm((p) => ({ ...p, data_pagamento: e.target.value }))}
+                  />
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>

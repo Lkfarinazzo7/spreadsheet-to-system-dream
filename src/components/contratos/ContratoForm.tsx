@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +15,8 @@ import { MoneyInput } from "@/components/ui/money-input";
 import { ContratoAnexos } from "./ContratoAnexos";
 import { DadosPropostaEditor } from "@/components/shared/DadosPropostaEditor";
 import type { DadosProposta } from "@/components/pipeline/PipelineForm";
-import { localIso } from "@/lib/format";
+import { addYearsIso, localIso } from "@/lib/format";
+import type { Json } from "@/integrations/supabase/types";
 
 type Lookup = { id: string; nome: string };
 
@@ -37,6 +38,7 @@ export type ContratoFormValues = {
   tipo: "PJ" | "PF" | "Adesao";
   operadora_id?: string | null;
   canal_id?: string | null;
+  categoria_id?: string | null;
   valor_mensal: number;
   proporcao_comissao: number;
   data_vigencia?: string | null;
@@ -53,12 +55,6 @@ const empty: ContratoFormValues = {
   proporcao_comissao: 0,
   status: "Ativo",
 };
-
-function addOneYear(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(Date.UTC(y + 1, m - 1, d));
-  return dt.toISOString().slice(0, 10);
-}
 
 const today = () => localIso();
 
@@ -79,11 +75,13 @@ export function ContratoForm({
   onOpenChange,
   initial,
   onSaved,
+  pipelineId,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   initial?: ContratoFormValues | null;
   onSaved: (contratoId?: string) => void;
+  pipelineId?: string;
 }) {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -93,6 +91,9 @@ export function ContratoForm({
   const [form, setForm] = useState<ContratoFormValues>(initial ?? empty);
   const [comissoes, setComissoes] = useState<ComissaoLine[]>([]);
   const [removedComissoes, setRemovedComissoes] = useState<string[]>([]);
+  const [comissoesLoading, setComissoesLoading] = useState(false);
+  const [comissoesLoadError, setComissoesLoadError] = useState(false);
+  const loadRequestRef = useRef(0);
 
   // Reset only when the dialog transitions from closed to open, to avoid
   // clobbering user edits on unrelated re-renders.
@@ -100,68 +101,65 @@ export function ContratoForm({
     if (!open) return;
     setForm(initial ?? empty);
     setRemovedComissoes([]);
-    if (!initial?.id) {
-      setComissoes(defaultComissoes());
-    }
+    setComissoes(initial?.id ? [] : defaultComissoes());
+    setComissoesLoading(!!initial?.id);
+    setComissoesLoadError(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, initial?.id]);
 
   const [lookupsLoaded, setLookupsLoaded] = useState(false);
 
-  // Load lookups + existing comissões
+  // Load lookups + existing comissões. O requestId impede que uma resposta
+  // atrasada de outro contrato sobrescreva o formulário atual.
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      loadRequestRef.current++;
+      return;
+    }
+    const requestId = ++loadRequestRef.current;
     setLookupsLoaded(false);
+    setComissoesLoading(!!initial?.id);
     (async () => {
-      // Load all (active + inactive) so we can always display the current
-      // selection, even if the linked operadora/canal was later disabled.
-      const [o, c] = await Promise.all([
-        supabase.from("operadoras").select("id,nome,ativo").order("nome"),
-        supabase.from("canais_venda").select("id,nome,ativo").order("nome"),
-      ]);
-      let ops: Lookup[] = ((o.data as any) ?? []) as Lookup[];
-      let cns: Lookup[] = ((c.data as any) ?? []) as Lookup[];
+      try {
+        const [o, c, k] = await Promise.all([
+          supabase.from("operadoras").select("id,nome,ativo").order("nome"),
+          supabase.from("canais_venda").select("id,nome,ativo").order("nome"),
+          initial?.id
+            ? supabase
+                .from("comissoes")
+                .select("id, tipo, parcela, valor, mes_previsto, data_pagamento")
+                .eq("contrato_id", initial.id)
+                .order("parcela")
+            : Promise.resolve({ data: null, error: null }),
+        ]);
+        if (requestId !== loadRequestRef.current) return;
+        if (o.error) throw o.error;
+        if (c.error) throw c.error;
+        if (k.error) throw k.error;
 
-      // Safety net: if the initial id is not in the returned rows for any
-      // reason (RLS edge case, etc.), fetch just that row so the Select can
-      // render the current value instead of falling back to a blank state.
-      if (initial?.operadora_id && !ops.some((r) => r.id === initial.operadora_id)) {
-        const { data } = await supabase
-          .from("operadoras")
-          .select("id,nome")
-          .eq("id", initial.operadora_id)
-          .maybeSingle();
-        if (data) ops = [...ops, data as any];
-      }
-      if (initial?.canal_id && !cns.some((r) => r.id === initial.canal_id)) {
-        const { data } = await supabase
-          .from("canais_venda")
-          .select("id,nome")
-          .eq("id", initial.canal_id)
-          .maybeSingle();
-        if (data) cns = [...cns, data as any];
-      }
-
-      setOperadoras(ops);
-      setCanais(cns);
-      setLookupsLoaded(true);
-
-      if (initial?.id) {
-        const { data } = await supabase
-          .from("comissoes")
-          .select("id, tipo, parcela, valor, mes_previsto, data_pagamento")
-          .eq("contrato_id", initial.id)
-          .order("parcela");
-        setComissoes(((data as any) ?? []) as ComissaoLine[]);
+        setOperadoras((o.data ?? []) as Lookup[]);
+        setCanais((c.data ?? []) as Lookup[]);
+        setLookupsLoaded(true);
+        if (initial?.id) setComissoes((k.data ?? []) as ComissaoLine[]);
+        setComissoesLoadError(false);
+      } catch (error) {
+        if (requestId !== loadRequestRef.current) return;
+        const message = error instanceof Error ? error.message : "Falha ao carregar o contrato";
+        setComissoesLoadError(true);
+        toast({ title: "Erro ao carregar contrato", description: message, variant: "destructive" });
+      } finally {
+        if (requestId === loadRequestRef.current) setComissoesLoading(false);
       }
     })();
-  }, [open, initial?.id]);
+  }, [open, initial?.id, toast]);
 
   // Auto-fill data_reajuste when vigencia changes (and reajuste vazio ou era +1 ano da vigência anterior)
   useEffect(() => {
-    if (form.data_vigencia && !form.data_reajuste) {
-      setForm((p) => ({ ...p, data_reajuste: addOneYear(form.data_vigencia!) }));
-    }
+    if (!form.data_vigencia) return;
+    const vigencia = form.data_vigencia;
+    setForm((current) => current.data_reajuste
+      ? current
+      : { ...current, data_reajuste: addYearsIso(vigencia, 1) });
   }, [form.data_vigencia]);
 
   // Recalculate `valor` for lines that have a percentual whenever valor_mensal changes
@@ -174,7 +172,6 @@ export function ContratoForm({
           : c,
       ),
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.valor_mensal]);
 
   // Proporção calculada
@@ -210,58 +207,70 @@ export function ContratoForm({
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    if (comissoesLoading || comissoesLoadError) {
+      toast({
+        title: "Comissões ainda não estão disponíveis",
+        description: "Feche e abra o contrato novamente antes de salvar.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (Number(form.valor_mensal) < 0 || comissoes.some((c) => Number(c.valor) < 0 || Number(c.parcela) < 1)) {
+      toast({ title: "Valores inválidos", description: "Valores não podem ser negativos e a parcela começa em 1.", variant: "destructive" });
+      return;
+    }
+    const keys = comissoes.map((c) => `${c.tipo}:${Number(c.parcela) || 1}`);
+    if (new Set(keys).size !== keys.length) {
+      toast({ title: "Parcelas duplicadas", description: "Use apenas uma parcela de cada número para o mesmo tipo.", variant: "destructive" });
+      return;
+    }
     setBusy(true);
     try {
       const payload = {
+        ...(form.id ? { id: form.id } : {}),
         cliente: form.cliente,
         tipo: form.tipo,
         status: form.status,
-        user_id: user.id,
         valor_mensal: Number(form.valor_mensal),
         proporcao_comissao: Number(proporcao.toFixed(4)),
         operadora_id: form.operadora_id || null,
         canal_id: form.canal_id || null,
+        categoria_id: form.categoria_id || null,
         data_vigencia: form.data_vigencia || null,
         data_reajuste: form.data_reajuste || null,
         numero_proposta: form.numero_proposta || null,
         observacoes: form.observacoes || null,
-        dados_proposta: (form.dados_proposta ?? null) as any,
+        dados_proposta: form.dados_proposta ?? null,
       };
+      const commissionPayload = comissoes.map((c) => ({
+        ...(c.id ? { id: c.id } : {}),
+        tipo: c.tipo,
+        parcela: Number(c.parcela) || 1,
+        valor: Number(c.valor) || 0,
+        mes_previsto: c.mes_previsto || localIso(),
+        data_pagamento: c.data_pagamento || null,
+      }));
 
-      let contratoId = form.id;
-      if (contratoId) {
-        const { error } = await supabase.from("contratos").update(payload).eq("id", contratoId);
+      let contratoId: string | null = null;
+      if (pipelineId) {
+        const { data, error } = await supabase.rpc("implantar_pipeline_com_contrato", {
+          p_pipeline_id: pipelineId,
+          p_contrato: payload as Json,
+          p_comissoes: commissionPayload as Json,
+          p_remover_comissoes: removedComissoes,
+        });
         if (error) throw error;
+        contratoId = data;
       } else {
-        const { data, error } = await supabase.from("contratos").insert(payload).select("id").single();
+        const { data, error } = await supabase.rpc("save_contrato_com_comissoes", {
+          p_contrato: payload as Json,
+          p_comissoes: commissionPayload as Json,
+          p_remover_comissoes: removedComissoes,
+        });
         if (error) throw error;
-        contratoId = data!.id;
+        contratoId = data;
       }
-
-      // Sync comissões — qualquer falha interrompe e é reportada (nada de sucesso falso).
-      if (removedComissoes.length > 0) {
-        const { error } = await supabase.from("comissoes").delete().in("id", removedComissoes);
-        if (error) throw error;
-      }
-      for (const c of comissoes) {
-        const cPayload = {
-          contrato_id: contratoId!,
-          user_id: user.id,
-          tipo: c.tipo,
-          parcela: Number(c.parcela) || 1,
-          valor: Number(c.valor) || 0,
-          mes_previsto: c.mes_previsto || localIso(),
-          data_pagamento: c.data_pagamento || null,
-          pago: !!c.data_pagamento,
-        };
-        if (c.id) {
-          const { error } = await supabase.from("comissoes").update(cPayload).eq("id", c.id);
-          if (error) throw error;
-        } else {
-          const { error } = await supabase.from("comissoes").insert(cPayload);
-          if (error) throw error;
-        }
-      }
+      if (!contratoId) throw new Error("O banco não retornou o contrato salvo.");
 
       toast({ title: form.id ? "Contrato atualizado" : "Contrato criado" });
       onOpenChange(false);
@@ -379,7 +388,11 @@ export function ContratoForm({
               </Button>
             </div>
 
-            {comissoes.length === 0 ? (
+            {comissoesLoading ? (
+              <div className="text-center text-sm text-muted-foreground border border-dashed rounded-md py-6">
+                Carregando comissões…
+              </div>
+            ) : comissoes.length === 0 ? (
               <div className="text-center text-sm text-muted-foreground border border-dashed rounded-md py-6">
                 Nenhuma comissão cadastrada.
               </div>
@@ -463,7 +476,7 @@ export function ContratoForm({
 
           <DialogFooter className="col-span-2 mt-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-            <Button type="submit" disabled={busy}>
+            <Button type="submit" disabled={busy || comissoesLoading || comissoesLoadError || !lookupsLoaded}>
               {busy && <Loader2 className="h-4 w-4 animate-spin" />} Salvar
             </Button>
           </DialogFooter>

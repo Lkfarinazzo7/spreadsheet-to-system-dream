@@ -1,4 +1,4 @@
-import { parseBRL } from "./format";
+import { isValidIsoDate, parseBRL } from "./format";
 
 export const ETAPAS_VALIDAS = [
   "Montagem de contrato",
@@ -53,24 +53,28 @@ export function parseDate(v: unknown): string | null {
   if (v == null || v === "") return null;
   if (typeof v === "number" && Number.isFinite(v)) {
     // Excel serial date (days since 1899-12-30)
-    const ms = Math.round((v - 25569) * 86400 * 1000);
-    const d = new Date(ms);
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.round(v * 86400 * 1000));
     if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
   }
   const s = String(v).trim();
-  const br = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  const br = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
   if (br) {
     const [, d, m, y] = br;
     const yyyy = y.length === 2 ? `20${y}` : y;
-    return `${yyyy}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+    const value = `${yyyy}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+    return isValidIsoDate(value) ? value : null;
   }
   const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (iso) {
     const [, y, m, d] = iso;
-    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+    const value = `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+    return isValidIsoDate(value) ? value : null;
   }
   const d = new Date(s);
-  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  if (!isNaN(d.getTime())) {
+    const value = d.toISOString().slice(0, 10);
+    return isValidIsoDate(value) ? value : null;
+  }
   return null;
 }
 
@@ -100,6 +104,7 @@ export function parseImportRows(
   const etapaMap = new Map<string, EtapaValida>(
     ETAPAS_VALIDAS.map((e) => [norm(e), e]),
   );
+  const seenProposals = new Set<string>();
 
   rows.forEach((raw, i) => {
     const rowNum = i + 2; // header is row 1
@@ -114,13 +119,17 @@ export function parseImportRows(
     }
 
     const valor = parseValor(r["valor_mensal"] ?? r["valor"] ?? r["valor total"]);
-    if (valor == null) {
+    if (valor == null || valor < 0) {
       errors.push({ row: rowNum, reason: "Valor inválido" });
       return;
     }
 
     const warnings: string[] = [];
     const tipoRaw = norm(r["tipo"] ?? r["tipo contrato"]);
+    if (tipoRaw && !TIPO_MAP[tipoRaw]) {
+      errors.push({ row: rowNum, reason: `Tipo "${r["tipo"] ?? r["tipo contrato"]}" inválido` });
+      return;
+    }
     const tipo = TIPO_MAP[tipoRaw] ?? "PF";
 
     const operadoraNome = String(r["operadora"] ?? "").trim();
@@ -137,6 +146,11 @@ export function parseImportRows(
       warnings.push(`Etapa "${r["etapa"]}" inválida, usando "${ctx.defaultEtapa}"`);
 
     const data_vigencia = parseDate(r["data_vigencia"] ?? r["vigencia"]);
+    const dataRaw = r["data_vigencia"] ?? r["vigencia"];
+    if (dataRaw != null && String(dataRaw).trim() && !data_vigencia) {
+      errors.push({ row: rowNum, reason: "Data de vigência inválida" });
+      return;
+    }
     const vidasRaw = r["vidas"];
     const vidas =
       vidasRaw == null || vidasRaw === ""
@@ -152,9 +166,19 @@ export function parseImportRows(
       endereco_empresa: String(r["endereco"] ?? r["endereço"] ?? "").trim() || undefined,
     };
 
+    const numeroProposta = String(r["numero_proposta"] ?? r["proposta"] ?? "").trim() || null;
+    if (numeroProposta) {
+      const proposalKey = `${operadora_id ?? "sem-operadora"}:${norm(numeroProposta)}`;
+      if (seenProposals.has(proposalKey)) {
+        errors.push({ row: rowNum, reason: `Proposta ${numeroProposta} duplicada no arquivo` });
+        return;
+      }
+      seenProposals.add(proposalKey);
+    }
+
     valid.push({
       cliente,
-      numero_proposta: String(r["numero_proposta"] ?? r["proposta"] ?? "").trim() || null,
+      numero_proposta: numeroProposta,
       tipo,
       operadora_id,
       canal_id,
