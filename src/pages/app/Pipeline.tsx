@@ -68,7 +68,7 @@ export default function Pipeline() {
         .neq("etapa", "Implantado")
         .eq("declinada", false)
         .order("posicao")
-        .range(from, to));
+        .range(from, to) as any);
       setItems(data);
 
       const { count, error: countError } = await supabase
