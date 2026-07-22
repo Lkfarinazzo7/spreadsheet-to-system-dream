@@ -1,66 +1,66 @@
+## Causa do erro "Cannot read properties of undefined (reading 'rest')"
 
-## Parte 1 — Corrigir erros de build (TypeScript)
+Confirmado no código e no banco:
 
-Todos os erros são de **tipagem**, não de lógica em runtime. Nenhum comportamento muda.
+- `ContratoForm.tsx` chama duas RPCs — `implantar_pipeline_com_contrato` e `save_contrato_com_comissoes` — usando um cast que **desliga o `this` do cliente**:
+  ```ts
+  const rpc = supabase.rpc as unknown as (fn, args) => Promise<...>;
+  await rpc("implantar_pipeline_com_contrato", {...});
+  ```
+  Como `supabase.rpc` é um método que internamente usa `this.rest`, chamá-lo desatrelado gera exatamente o erro do print (`reading 'rest'`).
+- Além disso, essas duas funções **não existem no banco** (`pg_proc` só tem `handle_new_user` e `set_updated_at`). Mesmo corrigindo o `this`, a chamada falharia.
+- A coluna `contrato_id` referenciada em `Pipeline.tsx` (`handlePromote` e `PipelineItem`) também **não existe** em `pipeline_contratos`, então esse ramo é código morto que também precisa ser removido para não confundir.
 
-### 1. `src/components/contratos/ContratoForm.tsx` (linhas 256, 265)
-Os RPCs `implantar_pipeline_com_contrato` e `save_contrato_com_comissoes` existem no banco mas não estão no `src/integrations/supabase/types.ts` (arquivo auto-gerado, desatualizado). Fazer cast pontual `(supabase.rpc as any)("nome_rpc", { ... })` nas duas chamadas.
+## O que fazer
 
-### 2. `src/pages/app/Contratos.tsx:35` e `src/pages/app/Pipeline.tsx:65`
-`fetchAllPages<T>` espera `PageResult<T>` mas o retorno do Supabase tipa `dados_proposta` como `Json`, enquanto o tipo local (`ContratoRow` / `PipelineItem`) tipa como `DadosProposta` / `{vidas?: number}`. Solução: castar o query builder passado ao `fetchAllPages` como `any` na chamada, mantendo o generic `<ContratoRow>` / `<PipelineItem>` para o consumidor.
+### 1. Corrigir o salvamento do contrato (elimina o erro do print)
 
-### 3. `src/components/ui/chart.tsx` (linhas 106, 111, 233, 240, 249)
-Componente shadcn padrão desatualizado em relação ao recharts atual (props `payload`/`label` do `TooltipProps` mudaram). Corrigir tipando o `TooltipContent` como `React.ComponentProps<typeof RechartsPrimitive.Tooltip> & { ... }` com narrowing local, e o `LegendContent` recebendo `payload` via `any` (arquivo é de infra de UI, não regride comportamento).
+Trocar as chamadas RPC inexistentes por operações diretas na tabela, feitas em sequência dentro do `submit` do `ContratoForm`:
 
-### Verificação
-Rodar o typecheck automático do harness após as edições; confirmar que os 8 erros somem sem introduzir novos.
+- `contratos`: `insert` (novo) ou `update` (existente) com `select().single()` para obter o `id`.
+- `comissoes`: para cada linha, `upsert` (usa `id` quando existe); para `removedComissoes`, `delete().in("id", ...)`.
+- Se `pipelineId` estiver presente e o `insert` de contrato + comissoes foi bem-sucedido, deletar a linha do pipeline (`pipeline_contratos.delete().eq("id", pipelineId)`).
 
----
+Isso replica o comportamento das RPCs que existiam antes desta regressão, sem depender de funções que não estão no banco e sem o cast que quebra o `this`.
 
-## Parte 2 — Relatório de auditoria (resumo dos achados)
+### 2. Garantir que Operadora e Canal cheguem preenchidos ao promover
 
-A auditoria completa foi concluída. Principais destaques (impacto alto/médio):
+- `Pipeline.tsx > handlePromote`: remover o bloco que busca `item.contrato_id` (coluna inexistente). Manter apenas o mapeamento `operadora_id` / `canal_id` a partir do `PipelineItem`, que já vêm corretos do banco.
+- `ContratoForm.tsx > Selects de Operadora/Canal`: hoje já esperam `lookupsLoaded`. Adicionar fallback: se o `initial.operadora_id` / `canal_id` não estiver na lista carregada (operadora inativa), fazer um `select` pontual e injetar na lista, para o valor sempre aparecer selecionado.
+- Remover `contrato_id` do tipo `PipelineItem` (código morto).
 
-### 🐞 Bugs
-1. **Pipeline drag race condition** — `Pipeline.tsx` calcula `posicao` do card via `Math.max` sobre estado local, dois drags rápidos podem gerar posições duplicadas. Ideal: RPC transacional para pegar `max(posicao)+1` no servidor.
-2. **`useAuth` pode travar em "carregando"** — `getSession()` sem `.catch()`; se rede falhar, `loading=true` para sempre.
-3. **PipelineForm filtra operadora/canal só ativos** — ao editar proposta cuja operadora foi desativada, o `<Select>` fica vazio. `ContratoForm` já resolve isso (traz todos); replicar no PipelineForm.
-4. **Falta `UNIQUE (contrato_id, tipo, parcela)`** em `comissoes` — a validação client-side pode ser burlada em edições concorrentes.
+### 3. Pré-preencher comissões por operadora
 
-### 🎨 UX
-5. **`window.confirm()` e `window.prompt()` nativos** espalhados em Pipeline, Contratos, Despesas, Cadastros, Comissões — quebram identidade visual e acessibilidade. Substituir por `AlertDialog` + `DatePicker` do shadcn.
-6. **KPI "Ticket médio" do Dashboard** mistura janelas temporais (receita histórica ÷ contratos do período) — renomear/esclarecer o rótulo.
+Criar um mapa nome-da-operadora → parcelas percentuais em `src/lib/comissoesPresets.ts`:
 
-### ⚡ Performance
-7. **Dashboard e Relatórios baixam a tabela inteira de `comissoes`/`contratos`** e filtram por período no client. Aplicar `.gte()/.lte()` no servidor.
-8. **Download em lote de anexos é serial** (`PipelineAnexos`) — usar `Promise.all` com concorrência limitada.
+```ts
+export const COMISSAO_PRESETS: Record<string, number[]> = {
+  "amil": [100, 100, 80],
+  "assim saude": [100, 100, 80],
+  "sulamerica": [100, 100, 80],
+  "porto seguro": [100, 100, 80],
+  "klini saude": [100, 100, 80],
+  "bradesco": [100, 100, 100, 50],
+  "leve saude": [100, 80],
+  "medsenior": [100, 70],
+  "prevent senior": [100, 40, 40],
+};
+```
+- Chave normalizada (lowercase, sem acentos) para casar independente de grafia.
+- Função `presetComissoes(operadoraNome, valorMensal)` retorna `ComissaoLine[]` com `tipo: "Bancaria"`, `parcela` sequencial, `percentual`, `valor = round(valorMensal * pct / 100, 2)`, `mes_previsto = hoje`.
 
-### 🔒 Segurança
-- RLS bem implementada em todas as tabelas e no bucket `pipeline-anexos` ✅
-- RPCs `SECURITY INVOKER` com checagem explícita de `user_id` ✅
-- Edge function `pipeline-parse` com auth + quota + schema JSON estrito ✅
-- Nenhum problema crítico encontrado.
+Aplicar em duas situações no `ContratoForm`:
 
-### 🧹 Code smells
-- **Duplicação quase total** entre `elaboracaoEmail.ts` e `antecipacaoEmail.ts` (blocos titulares/dependentes idênticos) — extrair helper compartilhado.
-- **`(item as any)` espalhados** em `Pipeline.tsx` — sintoma de `types.ts` desatualizado (mesma raiz dos erros de build acima).
-- **`ContratoForm`/`PipelineForm` com ~500-870 linhas** — quebrar em subcomponentes (`TitularesEditor`).
+- **Ao promover / abrir novo contrato**: se `!form.id` e `form.operadora_id` já vem preenchido do pipeline, ao terminar de carregar os lookups substituir as `comissoes` padrão (as 3 linhas em branco geradas por `defaultComissoes()`) pelas do preset. Só substituir se o usuário ainda não editou (todas as linhas sem `id`, `valor === 0`, `percentual == null`) — assim não sobrescreve edições.
+- **Ao trocar a operadora no Select** (novo contrato): mesmo critério — se a lista atual está "intocada" (default), regenera pelo preset. Se o usuário já mexeu, não mexe (evita perder trabalho).
 
-### 💡 Sugestões de incrementos (por domínio)
-1. **Alertas de reajuste** próximos para contratos ativos (hoje só existe "revisão" no pipeline).
-2. **Geração automática de parcelas de comissão** recorrentes a partir de uma regra no contrato.
-3. **Relatório de idade média/faixas etárias da carteira** usando `titulares`/`dependentes` de `dados_proposta`.
-4. **Funil de conversão do pipeline** (taxa por etapa, tempo médio em cada etapa).
-5. **Metas mensais de vendas/comissão** com acompanhamento visual no Dashboard.
-6. **Conciliação de repasse por operadora** (previsto × recebido, linha a linha).
-7. **Multiusuário/corretora** (schema hoje é 100% single-user via `user_id`, sem `organization_id`).
-8. **Assinatura eletrônica** integrada à etapa "Assinatura / Declaração de saúde".
-9. **Campanhas de aniversário de vigência** para renovação/upsell.
+Se a operadora não estiver no mapa, mantém o comportamento atual (3 linhas em branco).
 
----
+## Arquivos afetados
 
-## Próximos passos
+- `src/components/contratos/ContratoForm.tsx` — troca das RPCs por operações diretas, fallback de lookup, aplicação do preset.
+- `src/pages/app/Pipeline.tsx` — remover ramo `item.contrato_id`.
+- `src/components/pipeline/PipelineCard.tsx` — remover campo `contrato_id` do tipo.
+- `src/lib/comissoesPresets.ts` — novo arquivo com o mapa e helper.
 
-Ao aprovar este plano, eu:
-1. Executo somente a **Parte 1** (correção dos 8 erros de build).
-2. Depois te devolvo o controle para você escolher **quais itens da Parte 2** priorizar — cada um vira um plano próprio.
+Sem migração de banco — o problema não é de schema; é de código chamando RPCs inexistentes.
