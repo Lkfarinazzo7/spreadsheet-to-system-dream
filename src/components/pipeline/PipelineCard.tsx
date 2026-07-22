@@ -18,7 +18,6 @@ export type PipelineItem = {
   etapa: string;
   operadora_id?: string | null;
   canal_id?: string | null;
-  contrato_id?: string | null;
   declinada?: boolean | null;
   motivo_declinio?: string | null;
   declinada_em?: string | null;
