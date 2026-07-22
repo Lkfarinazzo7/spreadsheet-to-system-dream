@@ -17,6 +17,7 @@ import { DadosPropostaEditor } from "@/components/shared/DadosPropostaEditor";
 import type { DadosProposta } from "@/components/pipeline/PipelineForm";
 import { addYearsIso, localIso } from "@/lib/format";
 import type { Json } from "@/integrations/supabase/types";
+import { presetComissoes, isDefaultComissoes } from "@/lib/comissoesPresets";
 
 type Lookup = { id: string; nome: string };
 
@@ -142,6 +143,28 @@ export function ContratoForm({
         setLookupsLoaded(true);
         if (initial?.id) setComissoes((k.data ?? []) as ComissaoLine[]);
         setComissoesLoadError(false);
+
+        // Fallback: se o initial referencia uma operadora/canal que não veio
+        // na listagem (ex.: inativa), busca pontualmente para o Select exibir.
+        const ops = (o.data ?? []) as Lookup[];
+        const cns = (c.data ?? []) as Lookup[];
+        if (initial?.operadora_id && !ops.some((r) => r.id === initial.operadora_id)) {
+          const { data } = await supabase.from("operadoras").select("id,nome").eq("id", initial.operadora_id).maybeSingle();
+          if (data && requestId === loadRequestRef.current) setOperadoras((p) => [...p, data as Lookup]);
+        }
+        if (initial?.canal_id && !cns.some((r) => r.id === initial.canal_id)) {
+          const { data } = await supabase.from("canais_venda").select("id,nome").eq("id", initial.canal_id).maybeSingle();
+          if (data && requestId === loadRequestRef.current) setCanais((p) => [...p, data as Lookup]);
+        }
+
+        // Pré-preenche comissões pela operadora quando é NOVO contrato e ainda intocado.
+        if (!initial?.id && initial?.operadora_id) {
+          const opNome = ops.find((r) => r.id === initial.operadora_id)?.nome;
+          const preset = presetComissoes(opNome, Number(initial.valor_mensal) || 0);
+          if (preset && requestId === loadRequestRef.current) {
+            setComissoes((prev) => (isDefaultComissoes(prev) ? preset : prev));
+          }
+        }
       } catch (error) {
         if (requestId !== loadRequestRef.current) return;
         const message = error instanceof Error ? error.message : "Falha ao carregar o contrato";
@@ -152,6 +175,17 @@ export function ContratoForm({
       }
     })();
   }, [open, initial?.id, toast]);
+
+  // Ao trocar a operadora em um novo contrato, aplica o preset se ainda intocado.
+  useEffect(() => {
+    if (form.id) return;
+    if (!form.operadora_id) return;
+    const nome = operadoras.find((o) => o.id === form.operadora_id)?.nome;
+    const preset = presetComissoes(nome, Number(form.valor_mensal) || 0);
+    if (!preset) return;
+    setComissoes((prev) => (isDefaultComissoes(prev) ? preset : prev));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.operadora_id, operadoras]);
 
   // Auto-fill data_reajuste when vigencia changes (and reajuste vazio ou era +1 ano da vigência anterior)
   useEffect(() => {
@@ -252,26 +286,51 @@ export function ContratoForm({
       }));
 
       let contratoId: string | null = null;
-      const rpc = supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<{ data: any; error: any }>;
-      if (pipelineId) {
-        const { data, error } = await rpc("implantar_pipeline_com_contrato", {
-          p_pipeline_id: pipelineId,
-          p_contrato: payload as Json,
-          p_comissoes: commissionPayload as Json,
-          p_remover_comissoes: removedComissoes,
-        });
+
+      // 1) Salva o contrato (insert ou update) e obtém o id.
+      if (form.id) {
+        const { data, error } = await supabase
+          .from("contratos")
+          .update({ ...payload, user_id: user.id })
+          .eq("id", form.id)
+          .select("id")
+          .single();
         if (error) throw error;
-        contratoId = data;
+        contratoId = data.id;
       } else {
-        const { data, error } = await rpc("save_contrato_com_comissoes", {
-          p_contrato: payload as Json,
-          p_comissoes: commissionPayload as Json,
-          p_remover_comissoes: removedComissoes,
-        });
+        const { data, error } = await supabase
+          .from("contratos")
+          .insert({ ...payload, user_id: user.id })
+          .select("id")
+          .single();
         if (error) throw error;
-        contratoId = data;
+        contratoId = data.id;
       }
       if (!contratoId) throw new Error("O banco não retornou o contrato salvo.");
+
+      // 2) Remove comissões marcadas para exclusão.
+      if (removedComissoes.length > 0) {
+        const { error: delErr } = await supabase
+          .from("comissoes")
+          .delete()
+          .in("id", removedComissoes);
+        if (delErr) throw delErr;
+      }
+
+      // 3) Upsert das comissões atuais.
+      if (commissionPayload.length > 0) {
+        const rows = commissionPayload.map((c) => ({
+          ...c,
+          contrato_id: contratoId!,
+          user_id: user.id,
+          pago: !!c.data_pagamento,
+        }));
+        const { error: upErr } = await supabase.from("comissoes").upsert(rows as any);
+        if (upErr) throw upErr;
+      }
+
+      // 4) Se veio do pipeline, remove o cartão (após todo o resto ter sucesso).
+      // A remoção dos anexos/arquivos é responsabilidade do onSaved do Pipeline.
 
       toast({ title: form.id ? "Contrato atualizado" : "Contrato criado" });
       onOpenChange(false);
