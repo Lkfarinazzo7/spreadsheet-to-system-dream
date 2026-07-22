@@ -121,7 +121,7 @@ export default function Relatorios() {
           fetchAllPages<ReportContrato>((start, end) => supabase.from("contratos")
             .select("id,valor_mensal,data_vigencia,dados_proposta")
             .gte("data_vigencia", from).lte("data_vigencia", to)
-            .range(start, end)),
+            .range(start, end) as any),
           fetchAllPages<Comissao2>((start, end) => supabase.from("comissoes")
             .select("contrato_id,valor,pago,data_pagamento")
             .range(start, end)),
