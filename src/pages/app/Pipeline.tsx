@@ -116,7 +116,7 @@ export default function Pipeline() {
 
   const handlePromote = async (item: PipelineItem) => {
     setPromoting(item);
-    let initial: ContratoFormValues = {
+    const initial: ContratoFormValues = {
       cliente: item.cliente,
       tipo: item.tipo as any,
       operadora_id: (item as any).operadora_id ?? null,
@@ -130,24 +130,6 @@ export default function Pipeline() {
       status: "Ativo",
       dados_proposta: (item as any).dados_proposta ?? null,
     };
-
-    if (item.contrato_id) {
-      const { data, error } = await supabase
-        .from("contratos")
-        .select("*")
-        .eq("id", item.contrato_id)
-        .maybeSingle();
-      if (error || !data) {
-        setPromoting(null);
-        toast({
-          title: "Não foi possível retomar a implantação",
-          description: error?.message ?? "O contrato vinculado não foi encontrado.",
-          variant: "destructive",
-        });
-        return;
-      }
-      initial = data as ContratoFormValues;
-    }
     setPromoteInitial(initial);
     setPromoteOpen(true);
   };
