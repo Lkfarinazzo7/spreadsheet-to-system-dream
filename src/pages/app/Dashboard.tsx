@@ -57,8 +57,9 @@ export default function Dashboard() {
   const { toast } = useToast();
 
   // Period state
-  const [mode, setMode] = useState<"month" | "custom">("month");
+  const [mode, setMode] = useState<"month" | "year" | "custom">("month");
   const [monthDate, setMonthDate] = useState<Date>(startOfMonth(today));
+  const [year, setYear] = useState<number>(today.getFullYear());
   const [customStart, setCustomStart] = useState<string>(fmtIso(startOfMonth(today)));
   const [customEnd, setCustomEnd] = useState<string>(fmtIso(endOfMonth(today)));
 
@@ -66,8 +67,11 @@ export default function Dashboard() {
     if (mode === "custom") {
       return { start: customStart, end: customEnd };
     }
+    if (mode === "year") {
+      return { start: `${year}-01-01`, end: `${year}-12-31` };
+    }
     return { start: fmtIso(startOfMonth(monthDate)), end: fmtIso(endOfMonth(monthDate)) };
-  }, [mode, monthDate, customStart, customEnd]);
+  }, [mode, monthDate, year, customStart, customEnd]);
 
   const [comissoes, setComissoes] = useState<Comissao[]>([]);
   const [contratos, setContratos] = useState<Contrato[]>([]);
@@ -215,6 +219,9 @@ export default function Dashboard() {
   const goPrevMonth = () => setMonthDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1));
   const goNextMonth = () => setMonthDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1));
   const goCurrentMonth = () => { setMonthDate(startOfMonth(today)); setMode("month"); };
+  const goPrevYear = () => setYear((y) => y - 1);
+  const goNextYear = () => setYear((y) => y + 1);
+  const goCurrentYear = () => { setYear(today.getFullYear()); setMode("year"); };
 
   return (
     <div>
@@ -237,6 +244,24 @@ export default function Dashboard() {
                   <ChevronRight className="h-4 w-4" />
                 </Button>
                 <Button variant="ghost" size="sm" onClick={goCurrentMonth}>Hoje</Button>
+              </>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1">
+            <Button variant={mode === "year" ? "default" : "outline"} size="sm" onClick={() => setMode("year")}>
+              Anual
+            </Button>
+            {mode === "year" && (
+              <>
+                <Button variant="ghost" size="icon" className="h-9 w-9" onClick={goPrevYear}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <div className="px-3 py-1.5 text-sm font-medium min-w-[80px] text-center tabular-nums">{year}</div>
+                <Button variant="ghost" size="icon" className="h-9 w-9" onClick={goNextYear}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="sm" onClick={goCurrentYear}>Hoje</Button>
               </>
             )}
           </div>
