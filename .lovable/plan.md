@@ -1,66 +1,61 @@
-## Causa do erro "Cannot read properties of undefined (reading 'rest')"
+## 1. Aba Contratos (`src/pages/app/Contratos.tsx`)
 
-Confirmado no código e no banco:
+**Nova coluna "Comissão recebida"**
+- Ao carregar contratos, buscar em paralelo todas as comissões (`id, contrato_id, valor, pago`) e agrupar por `contrato_id` somando apenas as `pago = true`.
+- Exibir esse valor em uma nova coluna alinhada à direita, tabular-nums.
+- Adicionar linha de rodapé (`TableFooter`) com a somatória total das comissões recebidas dos contratos atualmente filtrados, além do total de "Valor mensal".
 
-- `ContratoForm.tsx` chama duas RPCs — `implantar_pipeline_com_contrato` e `save_contrato_com_comissoes` — usando um cast que **desliga o `this` do cliente**:
-  ```ts
-  const rpc = supabase.rpc as unknown as (fn, args) => Promise<...>;
-  await rpc("implantar_pipeline_com_contrato", {...});
-  ```
-  Como `supabase.rpc` é um método que internamente usa `this.rest`, chamá-lo desatrelado gera exatamente o erro do print (`reading 'rest'`).
-- Além disso, essas duas funções **não existem no banco** (`pg_proc` só tem `handle_new_user` e `set_updated_at`). Mesmo corrigindo o `this`, a chamada falharia.
-- A coluna `contrato_id` referenciada em `Pipeline.tsx` (`handlePromote` e `PipelineItem`) também **não existe** em `pipeline_contratos`, então esse ramo é código morto que também precisa ser removido para não confundir.
+**Novos filtros** (acima da tabela, junto do filtro de tipo/status existente)
+- **Operadora**: Select com todas as operadoras do usuário (`all` + lista).
+- **Canal**: Select com todos os canais de venda.
+- **Mês de vigência**: dois seletores compactos (Mês / Ano) no mesmo padrão já usado em Comissões, com opção "Todos". Filtra contratos cujo `data_vigencia` cai naquele mês/ano.
+- Incluir os novos filtros no `useMemo` que gera `filtered` e também no export XLSX (usa `filtered`).
 
-## O que fazer
+## 2. Dashboard (`src/pages/app/Dashboard.tsx`)
 
-### 1. Corrigir o salvamento do contrato (elimina o erro do print)
+Ampliar o seletor de período de `"month" | "custom"` para `"month" | "year" | "custom"`.
 
-Trocar as chamadas RPC inexistentes por operações diretas na tabela, feitas em sequência dentro do `submit` do `ContratoForm`:
+- **Mensal** (já existe): mantém os controles ‹ Mês/Ano › atuais.
+- **Anual** (novo botão): mostra controle ‹ Ano › (ChevronLeft/ChevronRight + label + botão "Hoje"). O `period` computa `start = YYYY-01-01`, `end = YYYY-12-31`.
+- **Período personalizado**: mantém o comportamento atual (Popover com dois `date` inputs).
 
-- `contratos`: `insert` (novo) ou `update` (existente) com `select().single()` para obter o `id`.
-- `comissoes`: para cada linha, `upsert` (usa `id` quando existe); para `removedComissoes`, `delete().in("id", ...)`.
-- Se `pipelineId` estiver presente e o `insert` de contrato + comissoes foi bem-sucedido, deletar a linha do pipeline (`pipeline_contratos.delete().eq("id", pipelineId)`).
+Selecionar um modo diferente troca `mode` sem apagar o estado dos outros modos, para o usuário poder alternar sem perder a seleção.
 
-Isso replica o comportamento das RPCs que existiam antes desta regressão, sem depender de funções que não estão no banco e sem o cast que quebra o `this`.
+Nenhuma outra métrica muda — todos os `useMemo` já dependem de `period.start/end`.
 
-### 2. Garantir que Operadora e Canal cheguem preenchidos ao promover
+## 3. Aba Relatórios (`src/pages/app/Relatorios.tsx`)
 
-- `Pipeline.tsx > handlePromote`: remover o bloco que busca `item.contrato_id` (coluna inexistente). Manter apenas o mapeamento `operadora_id` / `canal_id` a partir do `PipelineItem`, que já vêm corretos do banco.
-- `ContratoForm.tsx > Selects de Operadora/Canal`: hoje já esperam `lookupsLoaded`. Adicionar fallback: se o `initial.operadora_id` / `canal_id` não estiver na lista carregada (operadora inativa), fazer um `select` pontual e injetar na lista, para o valor sempre aparecer selecionado.
-- Remover `contrato_id` do tipo `PipelineItem` (código morto).
+### 3.1. Novos KPIs
+- **Ticket médio por contrato**: soma de `valor_mensal` dos contratos com `data_vigencia` dentro do período ÷ quantidade desses contratos.
+- **Ticket médio de comissão recebida**: soma das comissões pagas no período (já calculada como `totals.recebido`) ÷ nº de contratos distintos que tiveram comissão paga no período.
 
-### 3. Pré-preencher comissões por operadora
+Exibidos em uma nova faixa "Ticket médio" com dois cards, entre as seções "Realizado (caixa)" e "Competência". Também adicionados ao XLSX (aba "Resumo") e ao PDF.
 
-Criar um mapa nome-da-operadora → parcelas percentuais em `src/lib/comissoesPresets.ts`:
+### 3.2. Novos gráficos — faixa etária e parentesco
 
-```ts
-export const COMISSAO_PRESETS: Record<string, number[]> = {
-  "amil": [100, 100, 80],
-  "assim saude": [100, 100, 80],
-  "sulamerica": [100, 100, 80],
-  "porto seguro": [100, 100, 80],
-  "klini saude": [100, 100, 80],
-  "bradesco": [100, 100, 100, 50],
-  "leve saude": [100, 80],
-  "medsenior": [100, 70],
-  "prevent senior": [100, 40, 40],
-};
+Ler os JSON `dados_proposta` dos contratos do período (já persistidos em `contratos.dados_proposta`, editáveis pelo `DadosPropostaEditor`). Para cada contrato do período:
+- Titulares → calcular idade a partir de `data_nascimento` na data de referência (hoje).
+- Dependentes → idem, mais o campo `parentesco`.
+
+Faixas etárias (padrão ANS solicitado):
+```text
+0-18, 19-23, 24-28, 29-33, 34-38, 39-43, 44-48, 49-53, 54-58, 59+
 ```
-- Chave normalizada (lowercase, sem acentos) para casar independente de grafia.
-- Função `presetComissoes(operadoraNome, valorMensal)` retorna `ComissaoLine[]` com `tipo: "Bancaria"`, `parcela` sequencial, `percentual`, `valor = round(valorMensal * pct / 100, 2)`, `mes_previsto = hoje`.
 
-Aplicar em duas situações no `ContratoForm`:
+Novos gráficos (BarChart do recharts, mesmo padrão visual dos existentes):
+- **Faixa etária dos titulares** — contagem por faixa.
+- **Faixa etária dos dependentes** — contagem por faixa.
+- **Grau de parentesco dos dependentes** — contagem por `parentesco` (Cônjuge, Filho(a), etc.), ordenado desc.
 
-- **Ao promover / abrir novo contrato**: se `!form.id` e `form.operadora_id` já vem preenchido do pipeline, ao terminar de carregar os lookups substituir as `comissoes` padrão (as 3 linhas em branco geradas por `defaultComissoes()`) pelas do preset. Só substituir se o usuário ainda não editou (todas as linhas sem `id`, `valor === 0`, `percentual == null`) — assim não sobrescreve edições.
-- **Ao trocar a operadora no Select** (novo contrato): mesmo critério — se a lista atual está "intocada" (default), regenera pelo preset. Se o usuário já mexeu, não mexe (evita perder trabalho).
+Adicionar as três tabelas correspondentes ao export XLSX e ao PDF (após "Por canal").
 
-Se a operadora não estiver no mapa, mantém o comportamento atual (3 linhas em branco).
+### Notas técnicas
+- Adicionar ao `select` de Relatórios os campos `contratos.data_vigencia`, `contratos.valor_mensal`, `contratos.id` e `contratos.dados_proposta` (nova query paralela). O escopo atual só busca comissões/despesas.
+- Utilitário local `computeAge(iso, ref)` e `bucketFaixa(age)` dentro do próprio arquivo (não vale criar módulo compartilhado só para isso).
+- Ignorar entradas sem `data_nascimento` válida.
+- Nenhuma alteração de schema ou migração — as colunas necessárias já existem.
 
 ## Arquivos afetados
-
-- `src/components/contratos/ContratoForm.tsx` — troca das RPCs por operações diretas, fallback de lookup, aplicação do preset.
-- `src/pages/app/Pipeline.tsx` — remover ramo `item.contrato_id`.
-- `src/components/pipeline/PipelineCard.tsx` — remover campo `contrato_id` do tipo.
-- `src/lib/comissoesPresets.ts` — novo arquivo com o mapa e helper.
-
-Sem migração de banco — o problema não é de schema; é de código chamando RPCs inexistentes.
+- `src/pages/app/Contratos.tsx` — coluna comissão, rodapé total, filtros operadora/canal/mês de vigência.
+- `src/pages/app/Dashboard.tsx` — modo "year" no seletor de período.
+- `src/pages/app/Relatorios.tsx` — novos KPIs, gráficos de faixa etária e parentesco, ampliação dos exports XLSX/PDF.
