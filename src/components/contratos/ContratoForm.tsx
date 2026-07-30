@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2, Copy } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MoneyInput } from "@/components/ui/money-input";
@@ -18,6 +18,7 @@ import type { DadosProposta } from "@/components/pipeline/PipelineForm";
 import { addYearsIso, localIso } from "@/lib/format";
 import type { Json } from "@/integrations/supabase/types";
 import { presetComissoes, isDefaultComissoes } from "@/lib/comissoesPresets";
+import { buildInfoTexto, copiarTexto } from "@/lib/copiarInformacoes";
 
 type Lookup = { id: string; nome: string };
 
@@ -535,6 +536,25 @@ export function ContratoForm({
           </div>
 
           <DialogFooter className="col-span-2 mt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={async () => {
+                const texto = buildInfoTexto(
+                  form,
+                  operadoras.find((o) => o.id === form.operadora_id)?.nome,
+                  canais.find((c) => c.id === form.canal_id)?.nome,
+                );
+                const ok = await copiarTexto(texto);
+                toast(
+                  ok
+                    ? { title: "Informações copiadas" }
+                    : { title: "Não foi possível copiar", variant: "destructive" },
+                );
+              }}
+            >
+              <Copy className="h-4 w-4" /> Copiar informações
+            </Button>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
             <Button type="submit" disabled={busy || comissoesLoading || comissoesLoadError || !lookupsLoaded}>
               {busy && <Loader2 className="h-4 w-4 animate-spin" />} Salvar
