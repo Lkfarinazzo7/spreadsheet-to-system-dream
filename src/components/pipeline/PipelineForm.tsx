@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { Loader2, AlertTriangle, Trash2, Sparkles, ChevronDown, ChevronUp, Mail, Ban } from "lucide-react";
+import { Loader2, AlertTriangle, Trash2, Sparkles, ChevronDown, ChevronUp, Mail, Ban, Copy } from "lucide-react";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MoneyInput } from "@/components/ui/money-input";
 import { addYearsIso, maskPhone, getAge } from "@/lib/format";
@@ -19,6 +19,7 @@ import { PipelineAnexos } from "./PipelineAnexos";
 import { ElaboracaoEmailDialog } from "./ElaboracaoEmailDialog";
 import { buildElaboracaoEmail } from "@/lib/elaboracaoEmail";
 import { buildAntecipacaoEmail } from "@/lib/antecipacaoEmail";
+import { buildInfoTexto, copiarTexto } from "@/lib/copiarInformacoes";
 
 type Lookup = { id: string; nome: string };
 
@@ -788,6 +789,25 @@ export function PipelineForm({
           )}
 
           <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={async () => {
+                const texto = buildInfoTexto(
+                  form,
+                  operadoras.find((o) => o.id === form.operadora_id)?.nome,
+                  canais.find((c) => c.id === form.canal_id)?.nome,
+                );
+                const ok = await copiarTexto(texto);
+                toast(
+                  ok
+                    ? { title: "Informações copiadas" }
+                    : { title: "Não foi possível copiar", variant: "destructive" },
+                );
+              }}
+            >
+              <Copy className="h-4 w-4" /> Copiar informações
+            </Button>
             <Button
               type="button"
               variant="outline"
