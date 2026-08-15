@@ -491,6 +491,33 @@ export default function Relatorios() {
             </div>
           </CardContent>
         </Card>
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Origem — plano anterior (operadoras que mais movimento)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div style={{ height: Math.max(220, porPlanoAnterior.length * 44) }}>
+              {porPlanoAnterior.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Sem vidas com plano anterior informado no período.</p>
+              ) : (
+                <ResponsiveContainer>
+                  <BarChart data={porPlanoAnterior} layout="vertical" margin={{ left: 8, right: 56 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis type="number" allowDecimals={false} stroke="hsl(var(--muted-foreground))" fontSize={11} />
+                    <YAxis type="category" dataKey="nome" stroke="hsl(var(--muted-foreground))" fontSize={12} width={150} />
+                    <Tooltip
+                      contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }}
+                      formatter={(v: any, _n: any, p: any) => [`${v} vidas (${p?.payload?.pct ?? 0}%)`, "Origem"]}
+                    />
+                    <Bar dataKey="qtd" fill="hsl(var(--warning))" radius={[0, 4, 4, 0]}>
+                      <LabelList dataKey="qtd" position="right" fontSize={11} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
