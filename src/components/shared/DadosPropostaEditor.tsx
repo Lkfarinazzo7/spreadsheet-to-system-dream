@@ -29,6 +29,17 @@ function maskCpf(value: string) {
     .replace(/(\d{3})(\d)/, "$1-$2");
 }
 
+function maskCnpjCpf(value: string, tipo: string) {
+  if (tipo === "PJ") {
+    return value.replace(/\D/g, "").slice(0, 14)
+      .replace(/(\d{2})(\d)/, "$1.$2")
+      .replace(/(\d{3})(\d)/, "$1.$2")
+      .replace(/(\d{3})(\d)/, "$1/$2")
+      .replace(/(\d{4})(\d)/, "$1-$2");
+  }
+  return maskCpf(value);
+}
+
 export function DadosPropostaEditor({
   value,
   onChange,
@@ -78,6 +89,14 @@ export function DadosPropostaEditor({
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <div className="space-y-1.5">
+          <Label>{tipo === "PJ" ? "CNPJ" : "CPF"}</Label>
+          <Input
+            value={dp.cnpj_cpf ?? ""}
+            onChange={(e) => setDP({ cnpj_cpf: maskCnpjCpf(e.target.value, tipo) })}
+            placeholder={tipo === "PJ" ? "00.000.000/0000-00" : "000.000.000-00"}
+          />
+        </div>
         <div className="space-y-1.5">
           <Label>Categoria</Label>
           <Input value={dp.categoria ?? ""} onChange={(e) => setDP({ categoria: e.target.value })} />

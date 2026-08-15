@@ -82,6 +82,17 @@ export function PipelineCard({
       {...attributes}
       {...listeners}
     >
+      {revisao && (
+        <div
+          className={`-mx-3 -mt-3 mb-2 px-3 py-1.5 rounded-t-xl border-b flex items-center gap-1.5 font-bold ${revisao.cls} ${
+            isUrgent ? "text-[12px] uppercase tracking-wide" : "text-[11px]"
+          }`}
+        >
+          <CalendarClock className={isUrgent ? "h-4 w-4 shrink-0" : "h-3.5 w-3.5 shrink-0"} />
+          <span className="truncate">Próxima revisão: {revisao.label}</span>
+        </div>
+      )}
+
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="font-semibold text-sm truncate leading-tight">{item.cliente}</div>
@@ -96,19 +107,6 @@ export function PipelineCard({
           {item.tipo}
         </span>
       </div>
-
-      {revisao && (
-        <div className="mt-2">
-          <span
-            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 font-bold ${revisao.cls} ${
-              isUrgent ? "text-[12px] uppercase tracking-wide" : "text-[10.5px]"
-            }`}
-          >
-            <CalendarClock className={isUrgent ? "h-3.5 w-3.5" : "h-3 w-3"} />
-            Próxima revisão: {revisao.label}
-          </span>
-        </div>
-      )}
 
       {(item.operadora?.nome || item.canal?.nome) && (
         <div className="mt-2 flex flex-wrap gap-1">
