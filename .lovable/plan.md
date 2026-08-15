@@ -1,37 +1,28 @@
-## Objetivo
-Ao abrir um card da Pipeline ou um contrato, ter um botão que copia todas as informações do cliente para a área de transferência com um clique.
+# Ajustes: dados no contrato, destaque de revisão e relatório de plano anterior
 
-## O que será feito
+## 1. CNPJ e demais dados da proposta aparecerem em Contratos
 
-1. **Novo utilitário `src/lib/copiarInformacoes.ts`**
-   - Função que recebe os dados da proposta/contrato e devolve um texto organizado, pronto para colar no WhatsApp/e-mail.
-   - Formato:
-     ```text
-     CLIENTE: Sarmento e Moreira
-     Nº da proposta: 12345
-     Tipo: PJ | Operadora: Amil | Canal: Corretora X
-     Valor mensal: R$ 1.234,56
-     Vigência: 05/05/2026 | Reajuste: 05/05/2027
-     Acomodação: Enfermaria | Coparticipação: Sim
+Ao implantar, os dados da proposta já são copiados para o contrato (`dados_proposta` é gravado). O problema é de exibição: o editor compartilhado usado na aba Contratos mostra apenas categoria, acomodação, coparticipação, vidas, titulares e dependentes — ele não tem os campos CNPJ/CPF e Endereço da empresa que existem no card da Pipeline.
 
-     TITULARES
-     1. Nome — CPF 000.000.000-00 — Nasc. 01/01/1990 — Tel (00) 00000-0000
-        Dependentes: Pedro (Filho) — CPF ... — Nasc. ...
+Correção: incluir no editor compartilhado (`src/components/shared/DadosPropostaEditor.tsx`) os campos que hoje só existem no formulário da Pipeline:
+- CNPJ/CPF (com máscara conforme o tipo PJ/PF)
+- Endereço da empresa (quando PJ)
+- Qtd. de dependentes / data de reajuste da proposta, se ainda faltarem
 
-     OBSERVAÇÕES
-     ...
-     ```
-   - Campos vazios são omitidos, para não copiar linhas em branco.
+Assim, tudo que está preenchido na caixinha da Pipeline fica visível e editável em Contratos, sem perda de dados.
 
-2. **`src/components/pipeline/PipelineForm.tsx`**
-   - Botão "Copiar informações" (ícone de cópia) no rodapé do diálogo, junto dos botões de e-mail.
-   - Copia os dados atuais do formulário (incluindo edições não salvas) e mostra um toast "Informações copiadas".
+## 2. "Próxima revisão" no topo do card da Pipeline
 
-3. **`src/components/contratos/ContratoForm.tsx`**
-   - Mesmo botão no rodapé do diálogo, usando o mesmo utilitário, com os dados do contrato (inclui status e etapa quando existir).
+Em `src/components/pipeline/PipelineCard.tsx`, mover o badge de próxima revisão para o topo do card, acima do nome do cliente, como uma faixa de destaque em largura total (cores atuais mantidas: vermelho para atrasado, amarelo para hoje, azul para próximos 7 dias).
+
+## 3. Relatório de "plano anterior" (operadoras de origem)
+
+Em `src/pages/app/Relatorios.tsx`, novo bloco "Origem — plano anterior":
+- Percorre `dados_proposta.titulares[].plano_anterior` e `dependentes[].plano_anterior` dos contratos do período.
+- Conta quantas vidas vieram de cada operadora anterior (quem não tinha plano entra como "Sem plano").
+- Gráfico de barras horizontais ordenado do maior para o menor, com quantidade de vidas e percentual.
+- Entra também na exportação de Excel/PDF junto com os demais relatórios.
 
 ## Detalhes técnicos
-- Cópia via `navigator.clipboard.writeText`, com fallback para `document.execCommand("copy")` em contextos sem permissão.
-- Reuso das funções `formatCurrency` / `formatDate` de `src/lib/format.ts`.
-- Nomes de operadora/canal resolvidos a partir das listas de lookup já carregadas nos formulários.
-- Nenhuma mudança de banco de dados.
+- Arquivos: `src/components/shared/DadosPropostaEditor.tsx`, `src/components/pipeline/PipelineCard.tsx`, `src/pages/app/Relatorios.tsx`.
+- Sem mudanças de banco de dados; todos os campos já existem em `dados_proposta`.
