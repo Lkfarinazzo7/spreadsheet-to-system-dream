@@ -243,6 +243,27 @@ export default function Relatorios() {
     };
   }, [contratos]);
 
+  // Plano anterior: de quais operadoras as vidas vieram (titulares + dependentes)
+  const porPlanoAnterior = useMemo(() => {
+    const m = new Map<string, number>();
+    const add = (v?: string | null) => {
+      const nome = (v || "").trim() || "Sem plano";
+      m.set(nome, (m.get(nome) ?? 0) + 1);
+    };
+    contratos.forEach((c) => {
+      (c.dados_proposta?.titulares ?? []).forEach((t) => {
+        add(t.plano_anterior);
+        (t.dependentes ?? []).forEach((d) => add(d.plano_anterior));
+      });
+    });
+    const total = Array.from(m.values()).reduce((s, v) => s + v, 0);
+    return Array.from(m, ([nome, qtd]) => ({
+      nome,
+      qtd,
+      pct: total ? Math.round((qtd / total) * 1000) / 10 : 0,
+    })).sort((a, b) => b.qtd - a.qtd);
+  }, [contratos]);
+
   const exportXlsx = async () => {
     const resumo = [
       { Indicador: "REALIZADO (caixa) — Comissão recebida", Valor: totals.recebido },
@@ -262,6 +283,7 @@ export default function Relatorios() {
         { name: "Faixa etária titulares", rows: faixaTitulares },
         { name: "Faixa etária dependentes", rows: faixaDependentes },
         { name: "Parentesco dependentes", rows: porParentesco },
+        { name: "Plano anterior", rows: porPlanoAnterior },
       ], `relatorio_${from}_${to}.xlsx`);
     } catch (error) {
       toast({ title: "Erro ao exportar", description: error instanceof Error ? error.message : "Falha ao gerar Excel.", variant: "destructive" });
@@ -307,6 +329,10 @@ export default function Relatorios() {
     autoTable(doc, {
       head: [["Parentesco", "Qtd"]],
       body: porParentesco.map((r) => [r.nome, String(r.qtd)]),
+    });
+    autoTable(doc, {
+      head: [["Plano anterior (origem)", "Vidas", "%"]],
+      body: porPlanoAnterior.map((r) => [r.nome, String(r.qtd), `${r.pct}%`]),
     });
     doc.save(`relatorio_${from}_${to}.pdf`);
   };
