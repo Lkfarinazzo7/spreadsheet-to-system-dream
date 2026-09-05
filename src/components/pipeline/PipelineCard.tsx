@@ -1,7 +1,7 @@
 import { useDraggable } from "@dnd-kit/core";
 import { Card } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { Trash2, CalendarDays, Users, CheckCircle2, AlertCircle, CalendarClock } from "lucide-react";
+import { Trash2, CalendarDays, Users, CheckCircle2, AlertCircle, CalendarClock, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getTagColor, getTipoColor, tagStyle } from "@/lib/tagColor";
 import { getPendencias } from "@/lib/pipelinePendencias";
@@ -95,6 +95,26 @@ export function PipelineCard({
           <span className="truncate">Próxima revisão: {revisao.label}</span>
         </div>
       )}
+
+      {item.contrato_id && (
+        <div
+          className={`${revisao ? "" : "-mt-3 rounded-t-xl"} -mx-3 mb-2 px-3 py-2 border-b bg-destructive/10 border-destructive/30`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center gap-1.5 text-[11px] font-bold text-destructive">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">Contrato já criado — faltam documentos</span>
+          </div>
+          {onFinish && (
+            <Button size="sm" variant="destructive" className="mt-1.5 h-7 w-full text-[11px]" onClick={onFinish}>
+              Finalizar implantação
+            </Button>
+          )}
+        </div>
+      )}
+
+
 
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
