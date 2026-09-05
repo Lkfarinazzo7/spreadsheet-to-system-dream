@@ -21,6 +21,7 @@ export type PipelineItem = {
   declinada?: boolean | null;
   motivo_declinio?: string | null;
   declinada_em?: string | null;
+  contrato_id?: string | null;
   operadora?: { nome: string } | null;
   canal?: { nome: string } | null;
   dados_proposta?: { vidas?: number } | null;
@@ -30,10 +31,12 @@ export function PipelineCard({
   item,
   onEdit,
   onDelete,
+  onFinish,
 }: {
   item: PipelineItem;
   onEdit: () => void;
   onDelete: () => void;
+  onFinish?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: item.id,
