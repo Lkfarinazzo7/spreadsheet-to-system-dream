@@ -45,3 +45,56 @@ export async function removeStoragePrefix(prefix: string): Promise<void> {
     if (error) throw error;
   }
 }
+
+/**
+ * Move todos os arquivos de um prefixo para outro de forma tolerante a falhas:
+ * 1) tenta `move`; 2) se o destino já existir, considera concluído;
+ * 3) tenta novamente uma vez; 4) por fim tenta `copy` + `remove`.
+ * Pode ser chamada quantas vezes for preciso (idempotente).
+ */
+export async function movePrefixFiles(
+  oldPrefix: string,
+  newPrefix: string,
+): Promise<{ moved: number; failed: string[] }> {
+  const files = await listAllStorageFiles(oldPrefix);
+  const bucket = supabase.storage.from("pipeline-anexos");
+  const existing = new Set(
+    (await listAllStorageFiles(newPrefix).catch(() => [])).map((f) => f.name),
+  );
+
+  let moved = 0;
+  const failed: string[] = [];
+
+  for (const f of files) {
+    const from = `${oldPrefix}/${f.name}`;
+    const to = `${newPrefix}/${f.name}`;
+
+    if (existing.has(f.name)) {
+      // Já existe no destino: apenas limpa a origem.
+      const { error } = await bucket.remove([from]);
+      if (error) failed.push(f.name);
+      else moved++;
+      continue;
+    }
+
+    let { error } = await bucket.move(from, to);
+    if (error) ({ error } = await bucket.move(from, to)); // segunda tentativa
+
+    if (error) {
+      const { error: copyErr } = await bucket.copy(from, to);
+      if (copyErr) {
+        failed.push(f.name);
+        continue;
+      }
+      const { error: rmErr } = await bucket.remove([from]);
+      if (rmErr) {
+        failed.push(f.name);
+        continue;
+      }
+    }
+    moved++;
+  }
+
+  return { moved, failed };
+}
+
