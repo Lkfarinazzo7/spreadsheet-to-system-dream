@@ -11,8 +11,14 @@ const modalidadeFor = (tipo: string, cnpj?: string): string => {
   return "Individual";
 };
 
+// Aceita o formato da pipeline OU do contrato — ambos têm esses campos.
+export type AntecipacaoEmailInput = Pick<
+  PipelineFormValues,
+  "cliente" | "tipo" | "numero_proposta" | "dados_proposta"
+>;
+
 export function buildAntecipacaoEmail(
-  form: PipelineFormValues,
+  form: AntecipacaoEmailInput,
   operadoraNome?: string | null,
 ): AntecipacaoEmail {
   const dp = form.dados_proposta ?? {};

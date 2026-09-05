@@ -19,6 +19,9 @@ import { addYearsIso, localIso } from "@/lib/format";
 import type { Json } from "@/integrations/supabase/types";
 import { presetComissoes, isDefaultComissoes } from "@/lib/comissoesPresets";
 import { buildInfoTexto, copiarTexto } from "@/lib/copiarInformacoes";
+import { buildAntecipacaoEmail } from "@/lib/antecipacaoEmail";
+import { ElaboracaoEmailDialog } from "@/components/pipeline/ElaboracaoEmailDialog";
+import { Mail } from "lucide-react";
 
 type Lookup = { id: string; nome: string };
 
@@ -96,6 +99,7 @@ export function ContratoForm({
   const [comissoesLoading, setComissoesLoading] = useState(false);
   const [comissoesLoadError, setComissoesLoadError] = useState(false);
   const loadRequestRef = useRef(0);
+  const [antecipOpen, setAntecipOpen] = useState(false);
 
   // Reset only when the dialog transitions from closed to open, to avoid
   // clobbering user edits on unrelated re-renders.
@@ -563,12 +567,28 @@ export function ContratoForm({
             >
               <Copy className="h-4 w-4" /> Copiar informações
             </Button>
+            <Button type="button" variant="outline" onClick={() => setAntecipOpen(true)}>
+              <Mail className="h-4 w-4" /> E-mail de antecipação
+            </Button>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
             <Button type="submit" disabled={busy || comissoesLoading || comissoesLoadError || !lookupsLoaded}>
               {busy && <Loader2 className="h-4 w-4 animate-spin" />} Salvar
             </Button>
           </DialogFooter>
         </form>
+        {(() => {
+          const opNome = operadoras.find((o) => o.id === form.operadora_id)?.nome;
+          const ant = buildAntecipacaoEmail(form, opNome);
+          return (
+            <ElaboracaoEmailDialog
+              open={antecipOpen}
+              onOpenChange={setAntecipOpen}
+              assunto={ant.assunto}
+              corpo={ant.corpo}
+              titulo="E-mail de antecipação"
+            />
+          );
+        })()}
       </DialogContent>
     </Dialog>
   );
