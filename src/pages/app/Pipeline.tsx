@@ -340,6 +340,7 @@ export default function Pipeline() {
               accentClass={ETAPA_ACCENT[etapa]}
               onEdit={handleEdit}
               onDelete={handleDelete}
+              onFinish={(item) => handlePromote(item)}
             />
           ))}
         </div>
