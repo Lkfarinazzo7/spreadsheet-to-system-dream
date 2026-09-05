@@ -267,6 +267,7 @@ export type Database = {
         Row: {
           canal_id: string | null
           cliente: string
+          contrato_id: string | null
           created_at: string
           dados_proposta: Json | null
           data_revisao: string | null
@@ -288,6 +289,7 @@ export type Database = {
         Insert: {
           canal_id?: string | null
           cliente: string
+          contrato_id?: string | null
           created_at?: string
           dados_proposta?: Json | null
           data_revisao?: string | null
@@ -309,6 +311,7 @@ export type Database = {
         Update: {
           canal_id?: string | null
           cliente?: string
+          contrato_id?: string | null
           created_at?: string
           dados_proposta?: Json | null
           data_revisao?: string | null
@@ -333,6 +336,13 @@ export type Database = {
             columns: ["canal_id"]
             isOneToOne: false
             referencedRelation: "canais_venda"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pipeline_contratos_contrato_id_fkey"
+            columns: ["contrato_id"]
+            isOneToOne: false
+            referencedRelation: "contratos"
             referencedColumns: ["id"]
           },
           {
