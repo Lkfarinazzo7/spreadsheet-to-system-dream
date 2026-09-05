@@ -1,0 +1,1 @@
+ALTER TABLE public.pipeline_contratos ADD COLUMN IF NOT EXISTS contrato_id uuid REFERENCES public.contratos(id) ON DELETE SET NULL;

@@ -16,7 +16,7 @@ import { addYearsIso, formatCurrency, localIso } from "@/lib/format";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Ban } from "lucide-react";
-import { listAllStorageFiles, removeStoragePrefix } from "@/lib/storage";
+import { movePrefixFiles, removeStoragePrefix } from "@/lib/storage";
 import { fetchAllPages } from "@/lib/supabasePaging";
 
 const ETAPAS = [
@@ -114,7 +114,56 @@ export default function Pipeline() {
     [items, today],
   );
 
+  const finishPromotion = async (item: PipelineItem, contratoId: string) => {
+    if (!user) return;
+    const oldPrefix = `${user.id}/${item.id}`;
+    const newPrefix = `${user.id}/contratos/${contratoId}`;
+
+    let failed: string[] = [];
+    try {
+      const res = await movePrefixFiles(oldPrefix, newPrefix);
+      failed = res.failed;
+    } catch (e) {
+      failed = ["*"];
+    }
+
+    if (failed.length > 0) {
+      toast({
+        title: "Contrato criado, faltou mover alguns documentos",
+        description:
+          "O cartão continua na pipeline com o aviso “Finalizar implantação”. Clique nele para tentar de novo — o contrato não será duplicado.",
+        variant: "destructive",
+      });
+      setPromoting(null);
+      setPromoteInitial(null);
+      load();
+      return;
+    }
+
+    const { error: delError } = await supabase
+      .from("pipeline_contratos")
+      .delete()
+      .eq("id", item.id);
+    setPromoting(null);
+    setPromoteInitial(null);
+    if (delError) {
+      toast({
+        title: "Documentos movidos, mas o cartão não saiu da pipeline",
+        description: delError.message,
+        variant: "destructive",
+      });
+    } else {
+      toast({ title: "Implantado!", description: "Cartão e anexos movidos para Contratos." });
+    }
+    load();
+  };
+
   const handlePromote = async (item: PipelineItem) => {
+    // Já existe contrato criado a partir deste cartão: só concluir a transferência.
+    if ((item as any).contrato_id) {
+      await finishPromotion(item, (item as any).contrato_id as string);
+      return;
+    }
     setPromoting(item);
     const initial: ContratoFormValues = {
       cliente: item.cliente,
@@ -135,59 +184,10 @@ export default function Pipeline() {
   };
 
   const onContratoSaved = async (contratoId?: string) => {
-    if (!promoting) return;
-    // Move os anexos do pipeline para a pasta de contratos. Se QUALQUER movimentação
-    // falhar, o cartão é mantido no pipeline para nova tentativa — nunca perdemos anexo.
-    let falhasMover = 0;
-    if (contratoId && user) {
-      const oldPrefix = `${user.id}/${promoting.id}`;
-      const newPrefix = `${user.id}/contratos/${contratoId}`;
-      let files: Awaited<ReturnType<typeof listAllStorageFiles>> = [];
-      try {
-        files = await listAllStorageFiles(oldPrefix);
-      } catch {
-        falhasMover = -1; // não foi possível nem listar
-      }
-      if (falhasMover === 0) {
-        for (const f of files ?? []) {
-          const { error: moveError } = await supabase.storage
-            .from("pipeline-anexos")
-            .move(`${oldPrefix}/${f.name}`, `${newPrefix}/${f.name}`);
-          if (moveError) falhasMover++;
-        }
-      }
-    }
-    if (falhasMover !== 0) {
-      toast({
-        title: "Contrato criado, mas anexos não foram movidos",
-        description:
-          falhasMover === -1
-            ? "Não foi possível listar os anexos. O cartão foi mantido no pipeline — tente implantar novamente ou mova os arquivos manualmente."
-            : `${falhasMover} anexo(s) falharam ao mover. O cartão foi mantido no pipeline — tente novamente. Atenção: o contrato já existe em Contratos.`,
-        variant: "destructive",
-      });
-      setPromoting(null);
-      setPromoteInitial(null);
-      load();
-      return;
-    }
-    const { error: delError } = await supabase
-      .from("pipeline_contratos")
-      .delete()
-      .eq("id", promoting.id);
-    setPromoting(null);
-    setPromoteInitial(null);
-    if (delError) {
-      toast({
-        title: "Contrato criado, mas o cartão não foi removido do pipeline",
-        description: delError.message,
-        variant: "destructive",
-      });
-    } else {
-      toast({ title: "Implantado!", description: "Cartão e anexos movidos para Contratos." });
-    }
-    load();
+    if (!promoting || !contratoId) return;
+    await finishPromotion(promoting, contratoId);
   };
+
 
   const handleDragEnd = async (e: DragEndEvent) => {
     const id = e.active.id as string;
@@ -340,6 +340,7 @@ export default function Pipeline() {
               accentClass={ETAPA_ACCENT[etapa]}
               onEdit={handleEdit}
               onDelete={handleDelete}
+              onFinish={(item) => handlePromote(item)}
             />
           ))}
         </div>

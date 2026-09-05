@@ -330,8 +330,16 @@ export function ContratoForm({
         if (upErr) throw upErr;
       }
 
-      // 4) Se veio do pipeline, remove o cartão (após todo o resto ter sucesso).
-      // A remoção dos anexos/arquivos é responsabilidade do onSaved do Pipeline.
+      // 4) Se veio do pipeline, marca o cartão como já convertido em contrato.
+      // Isso permite retomar a implantação sem criar um contrato duplicado.
+      if (pipelineId && !form.id) {
+        await supabase
+          .from("pipeline_contratos")
+          .update({ contrato_id: contratoId } as any)
+          .eq("id", pipelineId);
+      }
+      // A remoção do cartão e dos anexos é responsabilidade do onSaved do Pipeline.
+
 
       toast({ title: form.id ? "Contrato atualizado" : "Contrato criado" });
       onOpenChange(false);
