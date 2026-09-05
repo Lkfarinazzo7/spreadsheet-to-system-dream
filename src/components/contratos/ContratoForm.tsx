@@ -576,6 +576,19 @@ export function ContratoForm({
             </Button>
           </DialogFooter>
         </form>
+        {(() => {
+          const opNome = operadoras.find((o) => o.id === form.operadora_id)?.nome;
+          const ant = buildAntecipacaoEmail(form, opNome);
+          return (
+            <ElaboracaoEmailDialog
+              open={antecipOpen}
+              onOpenChange={setAntecipOpen}
+              assunto={ant.assunto}
+              corpo={ant.corpo}
+              titulo="E-mail de antecipação"
+            />
+          );
+        })()}
       </DialogContent>
     </Dialog>
   );
