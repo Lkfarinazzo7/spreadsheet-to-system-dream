@@ -567,6 +567,9 @@ export function ContratoForm({
             >
               <Copy className="h-4 w-4" /> Copiar informações
             </Button>
+            <Button type="button" variant="outline" onClick={() => setAntecipOpen(true)}>
+              <Mail className="h-4 w-4" /> E-mail de antecipação
+            </Button>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
             <Button type="submit" disabled={busy || comissoesLoading || comissoesLoadError || !lookupsLoaded}>
               {busy && <Loader2 className="h-4 w-4 animate-spin" />} Salvar
