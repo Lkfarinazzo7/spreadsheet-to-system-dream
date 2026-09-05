@@ -9,12 +9,14 @@ export function PipelineColumn({
   accentClass = "bg-primary",
   onEdit,
   onDelete,
+  onFinish,
 }: {
   etapa: string;
   items: PipelineItem[];
   accentClass?: string;
   onEdit: (item: PipelineItem) => void;
   onDelete: (id: string) => void;
+  onFinish?: (item: PipelineItem) => void;
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: etapa });
   const total = items.reduce((s, i) => s + Number(i.valor_mensal || 0), 0);
@@ -45,6 +47,7 @@ export function PipelineColumn({
             item={item}
             onEdit={() => onEdit(item)}
             onDelete={() => onDelete(item.id)}
+            onFinish={onFinish ? () => onFinish(item) : undefined}
           />
         ))}
         {items.length === 0 && (
