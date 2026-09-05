@@ -19,6 +19,9 @@ import { addYearsIso, localIso } from "@/lib/format";
 import type { Json } from "@/integrations/supabase/types";
 import { presetComissoes, isDefaultComissoes } from "@/lib/comissoesPresets";
 import { buildInfoTexto, copiarTexto } from "@/lib/copiarInformacoes";
+import { buildAntecipacaoEmail } from "@/lib/antecipacaoEmail";
+import { ElaboracaoEmailDialog } from "@/components/pipeline/ElaboracaoEmailDialog";
+import { Mail } from "lucide-react";
 
 type Lookup = { id: string; nome: string };
 
@@ -96,6 +99,7 @@ export function ContratoForm({
   const [comissoesLoading, setComissoesLoading] = useState(false);
   const [comissoesLoadError, setComissoesLoadError] = useState(false);
   const loadRequestRef = useRef(0);
+  const [antecipOpen, setAntecipOpen] = useState(false);
 
   // Reset only when the dialog transitions from closed to open, to avoid
   // clobbering user edits on unrelated re-renders.
